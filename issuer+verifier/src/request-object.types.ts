@@ -16,7 +16,14 @@ export const commonReqSchema = z.object({
   client_metadata: VerifierMetadata.schema.optional(),
   transaction_data: z.array(z.string()).optional(),
   nonce: z.string().optional(),
-  response_mode: z.enum(['direct_post', 'query', 'fragment', 'dc_api.jwt', 'dc_api']),
+  response_mode: z.enum([
+    'direct_post',
+    'direct_post.jwt',
+    'query',
+    'fragment',
+    'dc_api.jwt',
+    'dc_api',
+  ]),
   response_uri: z.string().url().optional(),
   redirect_uri: z.string().url().optional(),
 })

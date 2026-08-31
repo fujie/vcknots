@@ -93,32 +93,33 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		return "", fmt.Errorf("failed to marshal presentation_submission: %w", err)
 	}
 
-	// Check if JARM (JWT-Secured Authorization Response Mode) is required
-	var useJARM bool
-	var encryptionAlg, encryptionEnc string
-	var verifierJWKS *jose.JSONWebKeySet
-
+	var verifierMetadata *VerifierMetadata
 	if request != nil && request.ClientMetadata != nil {
 		if metadata, ok := request.ClientMetadata.(*VerifierMetadata); ok {
-			if metadata.AuthorizationEncryptedResponseAlg != "" {
-				useJARM = true
-				encryptionAlg = metadata.AuthorizationEncryptedResponseAlg
-				encryptionEnc = metadata.AuthorizationEncryptedResponseEnc
-				verifierJWKS = &metadata.Jwks
-			}
+			verifierMetadata = metadata
 		}
 	}
+
+	// OID4VP Section 8.3 asks for an encrypted response whenever the Response
+	// Mode is one of the ".jwt" variants. A Verifier still speaking OID4VP
+	// draft 24 signals the same intent with authorization_encrypted_response_alg
+	// instead, so honour both.
+	encryptResponse := request != nil &&
+		(OAuthAuthzReqResponseMode(request.ResponseMode).RequiresEncryptedResponse() ||
+			(verifierMetadata != nil && verifierMetadata.AuthorizationEncryptedResponseAlg != ""))
 
 	// OID4VP direct_post requires application/x-www-form-urlencoded
 	formData := url.Values{}
 
-	if useJARM {
-		// JARM: Create JWT with response parameters, encrypt it, and send as "response" parameter
-		jarmToken, err := p.createJARMResponse(string(serializedPresentation), string(presentationSubmissionJSON), request, encryptionAlg, encryptionEnc, verifierJWKS)
+	if encryptResponse {
+		// The encrypted response travels as a single "response" parameter
+		// holding an unsigned, encrypted JWT. The submission goes in as the
+		// structure it is, not as the JSON text the form encoding needs.
+		responseJWE, err := p.createEncryptedResponse(string(serializedPresentation), presentationSubmission, request, verifierMetadata)
 		if err != nil {
-			return "", fmt.Errorf("failed to create JARM response: %w", err)
+			return "", fmt.Errorf("failed to create the encrypted authorization response: %w", err)
 		}
-		formData.Set("response", jarmToken)
+		formData.Set("response", responseJWE)
 	} else {
 		// Standard response: Send vp_token and presentation_submission directly
 		formData.Set("vp_token", string(serializedPresentation))
@@ -161,106 +162,30 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 	return verifierResponse.RedirectURI, nil
 }
 
-// createJARMResponse creates a JWT-Secured Authorization Response (JARM)
-func (p *Oid4vpPresenter) createJARMResponse(vpToken, presentationSubmission string, request *types.PresentationRequest, encAlg, encEnc string, verifierJWKS *jose.JSONWebKeySet) (string, error) {
-	// Create the response payload
+// createEncryptedResponse builds the encrypted Authorization Response of OID4VP
+// Section 8.3: an unsigned, encrypted JWT whose payload carries the
+// Authorization Response parameters as top-level members.
+//
+// Because the payload is JSON rather than a form body, presentation_submission
+// belongs in it as a JSON object. Carrying it as a string, the way the
+// form-encoded response has to, would leave a Verifier reading a string where
+// Section 8.1 defines an object.
+//
+// When the Verifier's encryption key names a JOSE HPKE algorithm the response is
+// bound to the session through the session_info structure of Section 8.3.1,
+// which the Verifier recomputes from the request parameters it issued.
+func (p *Oid4vpPresenter) createEncryptedResponse(vpToken string, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest, metadata *VerifierMetadata) (string, error) {
 	payload := map[string]interface{}{
 		"vp_token":                vpToken,
 		"presentation_submission": presentationSubmission,
 	}
 
-	// Add state if present
 	if request != nil && request.State != "" {
 		payload["state"] = request.State
 	}
 
-	// Marshal payload to JSON
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal JARM payload: %w", err)
-	}
-
-	// Find encryption key from verifier JWKS
-	if verifierJWKS == nil || len(verifierJWKS.Keys) == 0 {
-		return "", fmt.Errorf("verifier JWKS not available for encryption")
-	}
-
-	// Select appropriate key for encryption (prefer "enc" use, or first available key)
-	var encryptionKey *jose.JSONWebKey
-	for i := range verifierJWKS.Keys {
-		key := &verifierJWKS.Keys[i]
-		if key.Use == "enc" {
-			encryptionKey = key
-			break
-		}
-	}
-	if encryptionKey == nil {
-		// Use first key if no "enc" key found
-		encryptionKey = &verifierJWKS.Keys[0]
-	}
-
-	// Parse algorithm
-	var keyAlg jose.KeyAlgorithm
-	switch encAlg {
-	case "ECDH-ES":
-		keyAlg = jose.ECDH_ES
-	case "ECDH-ES+A128KW":
-		keyAlg = jose.ECDH_ES_A128KW
-	case "ECDH-ES+A192KW":
-		keyAlg = jose.ECDH_ES_A192KW
-	case "ECDH-ES+A256KW":
-		keyAlg = jose.ECDH_ES_A256KW
-	default:
-		return "", fmt.Errorf("unsupported encryption algorithm: %s", encAlg)
-	}
-
-	var contentEnc jose.ContentEncryption
-	switch encEnc {
-	case "A128GCM":
-		contentEnc = jose.A128GCM
-	case "A192GCM":
-		contentEnc = jose.A192GCM
-	case "A256GCM":
-		contentEnc = jose.A256GCM
-	case "A128CBC-HS256":
-		contentEnc = jose.A128CBC_HS256
-	case "A192CBC-HS384":
-		contentEnc = jose.A192CBC_HS384
-	case "A256CBC-HS512":
-		contentEnc = jose.A256CBC_HS512
-	default:
-		return "", fmt.Errorf("unsupported encryption encoding: %s", encEnc)
-	}
-
-	// Create encrypter
-	encrypter, err := jose.NewEncrypter(
-		contentEnc,
-		jose.Recipient{
-			Algorithm: keyAlg,
-			Key:       encryptionKey.Key,
-			KeyID:     encryptionKey.KeyID,
-		},
-		nil,
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	// Encrypt the payload
-	jwe, err := encrypter.Encrypt(payloadBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to encrypt JARM payload: %w", err)
-	}
-
-	// Serialize to compact form
-	serialized, err := jwe.CompactSerialize()
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize JWE: %w", err)
-	}
-
-	return serialized, nil
+	return encryptAuthorizationResponse(payload, metadata, sessionInfoForRequest(request))
 }
-
 
 type requestBuilder struct {
 	req                    *CredentialPresentationRequest
@@ -306,7 +231,7 @@ func (b *requestBuilder) validate() error {
 		return fmt.Errorf("nonce is required")
 	}
 
-	if b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
+	if b.req.ResponseMode.UsesResponseURI() {
 		responseURI, err := url.Parse(b.req.ResponseURI)
 		if err != nil {
 			return fmt.Errorf("response_uri must be URI: %w", err)
@@ -400,7 +325,7 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	b.req.ResponseMode = OAuthAuthzReqResponseMode(getParam("response_mode", true))
 
-	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
+	responseURIFromParam := getParam("response_uri", b.req.ResponseMode.UsesResponseURI())
 
 	if err := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); err != nil {
 		b.errValidation = err

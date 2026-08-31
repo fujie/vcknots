@@ -39,6 +39,7 @@ export const verifierMetadataSchema = z.object({
             crv: z.string().optional(),
             alg: z.string().optional(),
             kid: z.string().optional(),
+            use: z.string().optional(),
           })
           .and(z.record(z.string(), z.unknown()))
           .optional()
@@ -52,6 +53,14 @@ export const verifierMetadataSchema = z.object({
   authorization_signed_response_alg: z.string().optional(), // mentioned in OID4VP draft24
   authorization_encrypted_response_alg: z.string().optional(), // mentioned in OID4VP draft24
   authorization_encrypted_response_enc: z.string().optional(), // mentioned in OID4VP draft24
+  /**
+   * The JWE `enc` values the Verifier accepts for an encrypted Authorization
+   * Response (OID4VP 1.1 Section 8.3), replacing
+   * authorization_encrypted_response_enc. It has no effect when JOSE HPKE
+   * Integrated Encryption is used, since that mode has no separate content
+   * encryption algorithm.
+   */
+  encrypted_response_enc_values_supported: z.array(z.string()).nonempty().optional(),
 })
 export type VerifierMetadata = z.infer<typeof verifierMetadataSchema>
 export const VerifierMetadata = (value?: {
@@ -74,6 +83,9 @@ export const VerifierMetadata = (value?: {
       x?: string
       y?: string
       crv?: string
+      alg?: string
+      kid?: string
+      use?: string
     }[]
   }
   software_id?: string
@@ -83,5 +95,6 @@ export const VerifierMetadata = (value?: {
   authorization_signed_response_alg?: string
   authorization_encrypted_response_alg?: string
   authorization_encrypted_response_enc?: string
+  encrypted_response_enc_values_supported?: string[]
 }) => verifierMetadataSchema.parse(value)
 VerifierMetadata.schema = verifierMetadataSchema

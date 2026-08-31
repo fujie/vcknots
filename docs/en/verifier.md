@@ -10,8 +10,8 @@ This guide explains how to set up and use the Verifier feature of VCKnots.
 ## 1. Prerequisites
 
 - Supports OpenID for Verifiable Presentations - draft 24 ([OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html))  
+- Encrypted Authorization Responses follow OpenID4VP 1.1 [Section 8.3](https://openid.github.io/OpenID4VP/openid-4-verifiable-presentations-1_1-wg-draft.html#response_encryption). `response_mode` supports `direct_post` and `direct_post.jwt`; see [5. Encrypted Authorization Responses](#response-encryption).
 The following items are not implemented yet and are planned for future support:
-  - `response_mode` supports `direct_post`, but `direct_post.jwt` is not supported yet (planned for future support).
   - `presentation_definition_uri` is not supported yet.
   - vp_token is supported only as a single string value (JSON-based VP formats are not supported yet).
 - Assumes the cross-device flow
@@ -515,6 +515,96 @@ async function initializeVerifierMetadata(verifierId: string, metadata: Verifier
 ```
 
 
+## 5. Encrypted Authorization Responses (JOSE HPKE){#response-encryption}
+
+With `response_mode=direct_post.jwt` the Wallet returns a single `response` parameter holding an unsigned, encrypted JWT instead of the plain `vp_token` form fields (OpenID4VP 1.1 §8.3).
+
+VCKnots encrypts and decrypts those responses with **JOSE HPKE** ([draft-ietf-jose-hpke-encrypt](https://datatracker.ietf.org/doc/html/draft-ietf-jose-hpke-encrypt), Integrated Encryption mode). The following `alg` values are implemented:
+
+| `alg` | KEM | KDF | AEAD |
+| --- | --- | --- | --- |
+| `HPKE-0` | DHKEM(P-256, HKDF-SHA256) | HKDF-SHA256 | AES-128-GCM |
+| `HPKE-1` | DHKEM(P-384, HKDF-SHA384) | HKDF-SHA384 | AES-256-GCM |
+| `HPKE-2` | DHKEM(P-521, HKDF-SHA512) | HKDF-SHA512 | AES-256-GCM |
+| `HPKE-3` | DHKEM(X25519, HKDF-SHA256) | HKDF-SHA256 | AES-128-GCM |
+| `HPKE-4` | DHKEM(X25519, HKDF-SHA256) | HKDF-SHA256 | ChaCha20Poly1305 |
+| `HPKE-7` | DHKEM(P-256, HKDF-SHA256) | HKDF-SHA256 | AES-256-GCM |
+
+`HPKE-5` and `HPKE-6` use DHKEM(X448) and are not implemented. Node.js can perform X448, but the Go standard library cannot, so the suite is left out of both sides together rather than offered by a verifier that no wallet in this repository could answer. The Key Encryption (`-KE`) variants are not implemented either. The ECDH-ES family can also be used, in which case `encrypted_response_enc_values_supported` selects the content encryption algorithm (default `A128GCM`).
+
+### Publishing encryption keys
+
+Wallets encrypt to a key from `client_metadata.jwks`, so the keys must exist before the first `direct_post.jwt` request is issued. Call `createResponseEncryptionKeys` after registering the metadata:
+
+```typescript
+const clientId = VerifierClientId(baseUrl)
+await verifierFlow.createVerifierMetadata(clientId, metadata, option)
+
+// Publishes one key per algorithm in client_metadata.jwks, each with
+// `use: "enc"`, its `alg`, and a `kid`.
+await verifierFlow.createResponseEncryptionKeys(clientId)
+```
+
+### Session binding
+
+§8.3.1 requires a `session_info` structure that both sides compute independently and feed to HPKE as the `info` parameter:
+
+```
+session_info = ASCII("OpenID4VP-si") || BYTE(255) || ASCII(clientId) ||
+               BYTE(255) || ASCII(nonce) || BYTE(255) || ASCII(responseUri)
+```
+
+Because the session data is bound into the key schedule, a response captured from one presentation cannot be decrypted in the context of another: decryption fails closed rather than yielding a credential bound to different session data.
+
+The Verifier must therefore rebuild the session from the request parameters it issued, never from anything the response carries. Note that `state` is inside the ciphertext, so the transaction cannot be identified by `state` before decrypting. Giving each transaction its own `response_uri` solves both problems at once, which is what the server sample does:
+
+```typescript
+const responseUri = `${baseUrl}/callback/${encodeURIComponent(transactionId)}`
+
+const request = await verifierFlow.createAuthzRequest(
+  verifierId,
+  'vp_token',
+  client_id,
+  'direct_post.jwt',
+  query,
+  false,
+  { response_uri: responseUri, base_url: baseUrl }
+)
+// Store request.nonce and responseUri against transactionId.
+```
+
+### Receiving the response
+
+```typescript
+verifyApp.post('/callback/:transactionId', async (c) => {
+  const formData = await c.req.formData()
+  const response = formData.get('response') as string
+
+  // The session comes from what this server issued, not from the response.
+  const authorizationResponse = await verifierFlow.decryptAuthorizationResponse(
+    verifierId,
+    response,
+    {
+      responseMode: 'direct_post.jwt',
+      clientId: transaction.clientId,
+      nonce: transaction.session.nonce,
+      responseUri: transaction.session.responseUri,
+    }
+  )
+
+  const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+    expectedAud: transaction.clientId,
+  })
+})
+```
+
+For `dc_api.jwt` the session is identified by the request Origin instead:
+
+```typescript
+{ responseMode: 'dc_api.jwt', origin: 'https://verifier.example.com', nonce }
+```
+
+
 ## 6. Explanation of Type Definitions
 
 ### VerifierClientId {#VerifierClientId}
@@ -644,6 +734,53 @@ For detailed type definitions, see [verifier.flows.ts](https://github.com/trustk
 This is the response type returned by `createAuthzRequest`. It is combined with the PE (Presentation Exchange) or DCQL schema, either as a “Request URI format” using `request_uri`, or as a “direct format” that includes the parameters directly.
 For detailed type definitions, see [authorization-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-request.types.ts).
 
+
+### createResponseEncryptionKeys
+Generates the Verifier's Authorization Response encryption keys and publishes their public JWKs in the stored verifier metadata (OpenID4VP 1.1 §8.3). Call it after `createVerifierMetadata` and before issuing a request with a `.jwt` Response Mode.
+
+```typescript
+createResponseEncryptionKeys(
+  verifierId: VerifierClientId,
+  options?: CreateResponseEncryptionKeysOptions
+): Promise<Jwk[]>
+```
+
+**Parameters**:
+- `verifierId`: Identifier of the Verifier ([VerifierClientId](#VerifierClientId))
+- `options.algs`: JWE `alg` values to publish keys for, most preferred first. Defaults to every JOSE HPKE algorithm this library implements
+- `options.keys`: Key pairs to publish instead of generating them. Required for the ECDH-ES algorithms, which this library does not generate keys for
+- `options.encValuesSupported`: JWE `enc` values to advertise as `encrypted_response_enc_values_supported`. It has no effect on JOSE HPKE, so it is only worth setting alongside an ECDH-ES key
+
+**Return value**:
+- The published public JWKs, each carrying `use: "enc"`, its `alg`, and a `kid`
+
+**Error cases**:
+- `verifier_not_found`: No metadata is registered for `verifierId`
+- `invalid_options`: An algorithm was requested that this library can neither generate a key for nor use
+
+### decryptAuthorizationResponse
+Decrypts the `response` parameter of an encrypted Authorization Response and returns the response parameters it carries.
+
+```typescript
+decryptAuthorizationResponse(
+  verifierId: VerifierClientId,
+  response: string,
+  session: VerifierResponseEncryptionSession
+): Promise<VerifierAuthorizationResponse>
+```
+
+**Parameters**:
+- `verifierId`: Identifier of the Verifier ([VerifierClientId](#VerifierClientId))
+- `response`: The `response` form parameter, a JWE Compact Serialization
+- `session`: The session rebuilt from the request parameters this Verifier issued. `{ responseMode: 'direct_post.jwt', clientId, nonce, responseUri }` or `{ responseMode: 'dc_api.jwt', origin, nonce }`
+
+**Return value**:
+- The Authorization Response parameters ([VerifierAuthorizationResponse](#Verifierauthorizationresponse))
+
+**Error cases**:
+- `authz_verifier_key_not_found`: The Verifier holds no key matching the response's `alg` and `kid`
+- `invalid_encryption_parameters`: The response uses an unsupported algorithm, or decryption failed. A mismatched session is one cause, which is exactly the fail-closed behaviour §8.3.1 asks for
+- `invalid_request`: The decrypted payload is not a JSON object
 
 ### findRequestObject
 When the response from createAuthzRequest is in JAR format, this method retrieves the JAR-format request object.

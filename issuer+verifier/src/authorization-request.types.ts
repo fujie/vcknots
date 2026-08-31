@@ -12,7 +12,7 @@ const commonAuthzRequestSchema = commonReqSchema.extend({
   response_type: z.union([z.literal('vp_token'), z.literal('id_token'), z.string()]).optional(),
   client_id_scheme: z.string().optional(),
   client_metadata_uri: z.string().optional(),
-  response_mode: z.enum(['direct_post', 'query', 'fragment']).optional(),
+  response_mode: z.enum(['direct_post', 'direct_post.jwt', 'query', 'fragment']).optional(),
   request_uri: z.string().url().optional(),
 })
 

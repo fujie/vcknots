@@ -1,0 +1,280 @@
+[
+  {
+    "alg": "HPKE-0",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "use": "enc",
+      "alg": "HPKE-0",
+      "kid": "verifier-HPKE-0",
+      "x": "q-N2mON0uZcloWH8la_kABKJEkS357PtsogHem00ZOY",
+      "y": "0kj5NJ58u9sZRGQ3xl1j7D-gaUQ8q1JBSUWv0eQw7bQ",
+      "d": "FzeGRuBdF6DZneFkLQiz4RxNVdLmj7BuP4r8Tg6sG94"
+    },
+    "session": {
+      "responseMode": "direct_post.jwt",
+      "clientId": "x509_san_dns:verifier.example.com",
+      "nonce": "n-0S6_WzA2Mj",
+      "responseUri": "https://verifier.example.com/callback"
+    },
+    "response": "eyJhbGciOiJIUEtFLTAiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTAifQ.BHCpW0cNc3Bm1Fpl4AF8GUkHnSDX-NZlEZG2eeYMoONH_0bCFCBfRHS_g1AaKK-8sKR5Yy2-hA88gKcYkg9KLmk..aouB5TSGVUtu892WIF_PnNEjeHr-YV2D5hpSnEfqonlVLyE3BPalvrF4TbmbNxUZ3thMW-lO8bjD0mXUYBu7JCGr8He0tLlCOIbKYQDjIxjgWO2l4RKn-WFmzGem_By-W1Zq4RRzE4fAHcmnko6F0Ok26-RdSonjBdL9oEls4B9BYCUXiVThBSbGgwNFPOD8ddOBh1HYw_M8K8ZkcIQqSQ.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-0",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "use": "enc",
+      "alg": "HPKE-0",
+      "kid": "verifier-HPKE-0",
+      "x": "aUWTxsh1szWnhIK2VHgRl5RYIzPkt-eXtLV-oLYbLeY",
+      "y": "xkI3cVtzr4jaZNHd8WWFD2EvSFCq1H7NXrk8fPq8Ujc",
+      "d": "jninLXyaIWXf9tuQcFea6My4S5lA4wviFrlpqh5LlmI"
+    },
+    "session": {
+      "responseMode": "dc_api.jwt",
+      "nonce": "n-0S6_WzA2Mj",
+      "origin": "https://verifier.example.com"
+    },
+    "response": "eyJhbGciOiJIUEtFLTAiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTAifQ.BJYSSO6wAtv5ETAw1OiN12KrXALyuk-gvcjaet9gXSRzHKKnlr_PlLsHcdPB_RaKP-9UH_PPLDPJVkmy5knP01Q..eF8xh-73VkgHIPqsqj_I7l2zHwIR63hX9uzUPyZ32Q0szQjfF3UuySc4jjnBeqpQwTcqa8HoBCJABUhUmG6PETCutQswAPt40c2WzXyxkI8q-zlAq3J6iGooy5ao4Vyq3vgK5LCwcmW3-bhzQKbuoSnsBYXJ70WU4Kvw-veO4VYpxprnentqPCz6bW44PxTUt_bufSQ6CBgTa_dw4VQVfA.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-7",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "use": "enc",
+      "alg": "HPKE-7",
+      "kid": "verifier-HPKE-7",
+      "x": "nHTsttR9Ef-kROiEgjkP7Q3vLQSjR2iLV2buPx_blS0",
+      "y": "brH4GrFMSMCREBV3wKvqj1iJoLSBbNj2xw22zAMwFuE",
+      "d": "qfuTOpuT1zCvmBFi9mC06NZvlbpx6vJnMIrTjwHHcB4"
+    },
+    "session": {
+      "responseMode": "direct_post.jwt",
+      "clientId": "x509_san_dns:verifier.example.com",
+      "nonce": "n-0S6_WzA2Mj",
+      "responseUri": "https://verifier.example.com/callback"
+    },
+    "response": "eyJhbGciOiJIUEtFLTciLCJraWQiOiJ2ZXJpZmllci1IUEtFLTcifQ.BPYA2c3F1iFfzkwe01UsN5ZGOouw-t8hoXLkmGYaYmuOcJnH5-6pMJ2w-LLojMyFbV855uHwwmVvS0pvg13xLe4..eJmmHeM3kBSICNLgeLzvbiCZ98rBv6LNG4tgGRrQh9GwitWKPr5lY_d1Enaz_JB-pE6u9m5JJZju-cttcBe9voobq2HGjPBu5MNq8x-R29ISLTPwB25qjPxpB32uIqeD0yQmqfsnV5dJHpYKUYkLHG0DQX8MqbHnUX9HGEc-4EILUYikdH01-Tac-LSQ354NiqOQdmqJJ_cYAkfR5ro3qg.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-7",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "use": "enc",
+      "alg": "HPKE-7",
+      "kid": "verifier-HPKE-7",
+      "x": "8zMKdHAilRhTzG2bgAh0-ueNGERGXn_e4hPMWmlG1dw",
+      "y": "5WkIcdf_b2tEO27vKd38PWoA0MpIdSpRTfozTGilNhY",
+      "d": "IG2UJxJn8kBzoDNsFtEaRH9xKd2TbC2R3d1YjOWGSNQ"
+    },
+    "session": {
+      "responseMode": "dc_api.jwt",
+      "nonce": "n-0S6_WzA2Mj",
+      "origin": "https://verifier.example.com"
+    },
+    "response": "eyJhbGciOiJIUEtFLTciLCJraWQiOiJ2ZXJpZmllci1IUEtFLTcifQ.BHvBAqQ-ZTuwSVcFIGFuuFIF70LL6ITrMq6RYutiWGasOsBl15FXR93eIuOfq8WZ0rSd1MHRkZc3DnCLVpm23GI..YFQF_99dfwZcD7C2yIcG5firWZy2Es5e3EBY-u_k_RfMQEExTpp14zYr53glflYEo0JZPStimLNlJDfc6O6SKm__-MTHopvIgJNz6puqHac9iWBowzMjrkCYH1lTSuJTILSkeKRnGzGu_R1rMTrdo715HF8RXonvF3eyGkUCmUTC_xGmtaPyJ9sseFCnV7QCc0WbKNpBG_NgO_R4rfBHyw.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-3",
+    "privateJwk": {
+      "kty": "OKP",
+      "crv": "X25519",
+      "use": "enc",
+      "alg": "HPKE-3",
+      "kid": "verifier-HPKE-3",
+      "x": "79Ly0uUVrq2QHkBDmbPTWR8croHqDgwPQWQ739qt0iQ",
+      "d": "Cx8geYe9JCjsRrtLCo28HoLn1VrZxJQFG1lHOPLrvtM"
+    },
+    "session": {
+      "responseMode": "direct_post.jwt",
+      "clientId": "x509_san_dns:verifier.example.com",
+      "nonce": "n-0S6_WzA2Mj",
+      "responseUri": "https://verifier.example.com/callback"
+    },
+    "response": "eyJhbGciOiJIUEtFLTMiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTMifQ.iCh5UhS3N_aXY-W2aST9-8YilUd3TZfpIpy7LACyqFg..advQdpxNGT9Pf__PEXrtXutCMYazHFE344z-u9aiyOSdqqjifSwGNmCu4kTJ5noU6kFEl9bk8r9zVXfnxKvCJbHkf4ho-TDZxpPFudk7vQspqVq6oWTOug04qCgUVD8dF9P-8ga1lfBPdto5ZGNliWo7TtjcqIaZsxQHxbFjI3U-NqqK4mgcQV56wtk1y0XMOMrfKMBI_6pLhlXaX2dQuA.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-3",
+    "privateJwk": {
+      "kty": "OKP",
+      "crv": "X25519",
+      "use": "enc",
+      "alg": "HPKE-3",
+      "kid": "verifier-HPKE-3",
+      "x": "o0Uw2fXyeW0YPwf1mCxqaZVs5uEuRX9dG-L7HYFeHAg",
+      "d": "itQ4wQwY1Vs6zO896mAle5Xpsug1k0XBgryf7Bjzwa0"
+    },
+    "session": {
+      "responseMode": "dc_api.jwt",
+      "nonce": "n-0S6_WzA2Mj",
+      "origin": "https://verifier.example.com"
+    },
+    "response": "eyJhbGciOiJIUEtFLTMiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTMifQ.7UBO-Upzqk47mUUw_jME-ANDj79Qi3pgsGk8XCEAJwQ..1UmJ9OL7fWiuSSV9xeOpVMd77eETotdWQ3V8cjmFYLg0jnAeCuv0BZIzq_0yYTr2pJsML8SLlggNmlWOOxlMar0bfoKaHO-Un_Zx6OcHmjqdd7Hfrr-eFfYDOAPoSCGFfnybC8DwCUGCySR1b-ym9sc-6q2Z-GL4BegAjyTGsDMIO8ZLmJXl0r8E9SrZKpQvvkVf1fH6q0a2SszuioooHg.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-4",
+    "privateJwk": {
+      "kty": "OKP",
+      "crv": "X25519",
+      "use": "enc",
+      "alg": "HPKE-4",
+      "kid": "verifier-HPKE-4",
+      "x": "fSUe8USCpCJ7IQwKqYvLUlB2rZl6ShwY2XAfaKLnUn8",
+      "d": "SqMzg9sUC_cQKfvq_84KAsm16pk__vIUIraUGJoVsQY"
+    },
+    "session": {
+      "responseMode": "direct_post.jwt",
+      "clientId": "x509_san_dns:verifier.example.com",
+      "nonce": "n-0S6_WzA2Mj",
+      "responseUri": "https://verifier.example.com/callback"
+    },
+    "response": "eyJhbGciOiJIUEtFLTQiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTQifQ.KkA4dAjnUtC77LtzIflpTK8oybS1LPFrY9tIkhOFkn4..64dGb55XnmZAmqLGDU-2gk3jUOqCqHo6ReR-G30SuXOpWTDlkapZ7UNmrXThP4kOnHlCWkRSWZX08u2bnFK7UD7UmyGd4TzbKA_uC1c8jnohvSg1LPZKCsUlvjeAXcA31Dl4yAEKYvlqE3XXqPRt8XHHbr3V8PB9-60tHfMasyDbNuJFvAoLOEjnE3g8ZxAR-XcasCkacowQ9_LCBw6nJw.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-4",
+    "privateJwk": {
+      "kty": "OKP",
+      "crv": "X25519",
+      "use": "enc",
+      "alg": "HPKE-4",
+      "kid": "verifier-HPKE-4",
+      "x": "dCWMCQKm7F1ktighPFZfOcumBBBr_5nWqKWBBfhf6Cc",
+      "d": "eTqDGnDZvAG9ybOX51Iqp7ua_vfpu9Wmv3zvBs7ujnY"
+    },
+    "session": {
+      "responseMode": "dc_api.jwt",
+      "nonce": "n-0S6_WzA2Mj",
+      "origin": "https://verifier.example.com"
+    },
+    "response": "eyJhbGciOiJIUEtFLTQiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTQifQ.QqWiQ_-JoXiFrbTxvliqOZBbddZNuu9wb84toEQItgI..e_Ie-sAq7rElkkxE2xRdUGrHC7HTV1e5_aOEP3PXV54W3L17BzpZtnXRbjdJJp-2QEH1FDDLUE3auUoO10cKbext4c8qDinC-qkwV5as1BcbBmjoBSB3iDO32M8La1s4F0d3HPQnQhOtSlZMGt3g1cPHIF9YKdGCAU_6a6fQmAwuZcus-8hDTZTA7a_84t-O9RCddJkGqRJvgZlIGxqv6A.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-1",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-384",
+      "use": "enc",
+      "alg": "HPKE-1",
+      "kid": "verifier-HPKE-1",
+      "x": "GbQT4yYVT-CjGz9HMzKt8MKESDnRNiLzbDib2LHK3jDqIfi7NDBKcv_3TllqrPq5",
+      "y": "AQ2k53IimbmvECM94St7oB9y_yWLmLPkwSJyyVa9J9sMyYafJ2Lhx5yFP-FBqZeY",
+      "d": "m4tHfKk9VIoN7xW9apeIwrBZnzdvM1CRbVK9MjB4xKZtO6-aI83Brtd8wHb-wDxX"
+    },
+    "session": {
+      "responseMode": "direct_post.jwt",
+      "clientId": "x509_san_dns:verifier.example.com",
+      "nonce": "n-0S6_WzA2Mj",
+      "responseUri": "https://verifier.example.com/callback"
+    },
+    "response": "eyJhbGciOiJIUEtFLTEiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTEifQ.BDruOmI6P2IYD2ml51CD1rkPxbWrgKhlbDMmHOs_1ti55D4WTrTsXbrbc-CoVH9aBIcrFedHb1FGsktp8Do0zHgR1CxAr7l8hmJ4m34-MKx72Oe7nBkt54Mb3zIm_-sKog..4lm6f7Rs57aKBQOV2706p06sryzBZLpeX7QfA7e2Z7BV_XL8xBVtf4dU7io6zhXrJaxQQUuAcqUNFqbu7gnLAu0z_vf8mUFUPMFS1g6rk2MsE0UBuSkEFk62PEpi24mshuYNdLOvmOiUHbZT6ASMuviTaGiCyy1iHsWOKqtcT8hevJB-2kIKuVqAFKQ3zKR-UbQCb20KNMF2AxFzEXB1hA.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-1",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-384",
+      "use": "enc",
+      "alg": "HPKE-1",
+      "kid": "verifier-HPKE-1",
+      "x": "PBqwRvdjpA37ZeT5R2IPF-xAqx66Fj4PFX1bB8ZfptzBrlDqtK-PCv7BnO6WC_pa",
+      "y": "w2tQpRlvQtZ-qe5_WzgA_w4uTZXxDCqOt8obXcln-NbduevdEDF3HrZp_BAaejkF",
+      "d": "ejT4PrB2DXG1hWmRZbb93DTXkaE7_utKJ0velOHK8y8kZ1KWyneUaTTmiyjgq45a"
+    },
+    "session": {
+      "responseMode": "dc_api.jwt",
+      "nonce": "n-0S6_WzA2Mj",
+      "origin": "https://verifier.example.com"
+    },
+    "response": "eyJhbGciOiJIUEtFLTEiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTEifQ.BCKhz1Sfuu0_Mu-DmUyL9tovR03OCklFhUCZ_yMbWjeA7R7JgKMu93xgLgk4W9LlK5Mof0wj2ZXPD81YVr6RDRR0CXZO8JhtZx2dXRgPlZJTxpttkdJyzVleQFFRb5D_Uw..9uRC4Wv1t0DQU1t1FLrdLXAhkTu5IqkHdeqsr5-f7XpYqh2-L6F6KMFElY0R_JDbW0WS18ks_JqmTeIUk5Z5jqkX5AgGWcc_4KNL1VDf1zsQp9S9meDy2xm6Ja75bqcUsPY7XWPl04MqLrEFBWDUz1LEj3jACUndmrZ77AJJRXv153p8IydBNaqAul-JngOZXQWuU_B9Dwtl6lHogmfrig.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-2",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-521",
+      "use": "enc",
+      "alg": "HPKE-2",
+      "kid": "verifier-HPKE-2",
+      "x": "AbWxgxbU2TtAuNL_JQONw3NxAdBThEWs2Ely12NPxlgGkfQkoMSiQ7-veToAxB2046OLQvEhCk6tEdZz71SxwFhc",
+      "y": "AL21eEUfmhnD4YWT8Uq-04eXZ96_3BuKjbOXtsk-W4JIFuHCuMKvsJUh-e1HfyaJq0u73nZ77Z98WKLGUJsxTpgx",
+      "d": "AaMEfvLs82FfVrY780cZH9Sm8cte0EkY_JCzavap2cPrHk7yW74CVuUJCXKmviKLJIuF4qsis-Z2e8l3aH88b0mm"
+    },
+    "session": {
+      "responseMode": "direct_post.jwt",
+      "clientId": "x509_san_dns:verifier.example.com",
+      "nonce": "n-0S6_WzA2Mj",
+      "responseUri": "https://verifier.example.com/callback"
+    },
+    "response": "eyJhbGciOiJIUEtFLTIiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTIifQ.BAC3M8NL9qBCEEhsRAhQP8OjXOr1Ruyj-BMphmtPw9DHjDGabepRTKJtW3qBGWJrIZ5nH3KhMF8jWTJx6JiQ2Fl0ZQAViIwAVAn7GyB6O6fvNnMIi8FRBOk8-7_qFjzk46QB1b6oVleN6cmr14VD-Xifa-lmjhRL7HyGXKzuTycRjXOmxw..Q21qk2q61EpuWt_9JYOTCWc4lA4JDPQOyWwHtKBNfIyiiZF1L7rT2jSH_gQnT5bTX3mNvSM3ydaE4lz_DxY11-H67jNQCxXpcOHu8YDaV1sXGlLPz8NYXXBxNdXnwcoo_v1whQAEMh7uZpwQC_CxUyU7fS0m93rW7IH2DleaLPMGVZruWPskvZdqkb259yjM57LDOet31YVyWZILtq2Keg.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  },
+  {
+    "alg": "HPKE-2",
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "P-521",
+      "use": "enc",
+      "alg": "HPKE-2",
+      "kid": "verifier-HPKE-2",
+      "x": "AUxQQ1yXESHIwx4U5k_mR46vvw74ihJFszn1X6bPCj2PzUuGqeNGtg46a8w4HDF60--Zd9ACvWRQzuQhJ2xR6di8",
+      "y": "AC_l2-sp0HqXXb94eNcwOFqvHoheBWue7qj4j6Ak0RfcAIwvJbY0MP16xV12k85biMej0zb6spwPPKH4eEfMGbT4",
+      "d": "Aafe9JuImUxaTEC_3IPGd1JwSbMWFmTLAfSos7DLVJF06wjyX-2LEUMZ-w82gt860MhoiF9JFRgkTqEsUEJvVgKS"
+    },
+    "session": {
+      "responseMode": "dc_api.jwt",
+      "nonce": "n-0S6_WzA2Mj",
+      "origin": "https://verifier.example.com"
+    },
+    "response": "eyJhbGciOiJIUEtFLTIiLCJraWQiOiJ2ZXJpZmllci1IUEtFLTIifQ.BAEacHRWX_JGinkbwoKTX389T60WftbO7dgaUamOlISsakzYXrtPB-gBPn10runERbbRdNQiive6uWDuS-vEojUYPQBDOEPINHUC_7T40bEkBvn1yXfACf5x21Ng4gSu4RPT4wS5BSkdOddPAGMxuEHKWgr_LQaLJNT8Iz8h6p0yJFnPCQ..zODs87pGoMlgvJa1wKnRaX71_lODxR0ZrkmqUu6Op6lKwtJUvqYBJESGZD9xXkvOwZAymXsyrMxKA722HsG4yczL3S_gqMW00EO0oPrO07mudYTlW-LOkLKDwsqFCUlGfc0q7RZuJZRAVyUb975QAKHm1xK5I9Ry29abBALs34cqQO7_w2NFZI-h6a2ZeQ59P_ooksJZFtp-5PKRZ7hKNg.",
+    "payload": {
+      "state": "state-1",
+      "vp_token": "a-vp-token"
+    }
+  }
+]

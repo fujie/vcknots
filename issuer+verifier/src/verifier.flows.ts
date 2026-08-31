@@ -21,6 +21,12 @@ import { Jwk } from './jwk.type'
 import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { VpTokenPayload } from './presentation.types'
+import { supportedHpkeAlgorithms } from './jose-hpke'
+import {
+  isSupportedResponseEncryptionAlgorithm,
+  ResponseEncryptionSession,
+} from './response-encryption'
+import { ResponseEncryptionKeyEntry } from './response-encryption-key.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -54,6 +60,25 @@ export type VerifyPresentationOptions = {
   expectedNonce?: string
   expectedTransactionDataHashes?: string[]
 }
+export type CreateResponseEncryptionKeysOptions = {
+  /**
+   * The JWE `alg` values to publish encryption keys for, most preferred first.
+   * Defaults to the JOSE HPKE algorithms this library implements.
+   */
+  algs?: string[]
+  /**
+   * Key pairs to publish instead of generating them. Required for the ECDH-ES
+   * algorithms, which this library does not generate keys for.
+   */
+  keys?: ResponseEncryptionKeyEntry[]
+  /**
+   * The JWE `enc` values to advertise for the ECDH-ES algorithms. It has no
+   * effect on JOSE HPKE, where no separate content encryption algorithm exists,
+   * so it is only worth setting alongside an ECDH-ES key.
+   */
+  encValuesSupported?: string[]
+}
+
 export type FindRequestObjectOptions = {
   alg?: string
   // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11 is not supported
@@ -69,15 +94,47 @@ export type VerifierFlow = {
     metadata: VerifierMetadata,
     options?: CreateVerifierMetadataOptions
   ): Promise<void>
+  /**
+   * Generates the Verifier's Authorization Response encryption keys, publishes
+   * their public JWKs in the stored verifier metadata, and returns them
+   * (OID4VP 1.1 Section 8.3).
+   *
+   * Call this after {@link VerifierFlow.createVerifierMetadata} and before
+   * issuing a request with a `.jwt` Response Mode.
+   */
+  createResponseEncryptionKeys(
+    verifierId: ClientId,
+    options?: CreateResponseEncryptionKeysOptions
+  ): Promise<Jwk[]>
   createAuthzRequest(
     verifierId: ClientId,
     response_type: 'vp_token',
     client_id: ClientIdentifier,
-    response_mode: 'direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api',
+    response_mode:
+      | 'direct_post'
+      | 'direct_post.jwt'
+      | 'query'
+      | 'fragment'
+      | 'dc_api.jwt'
+      | 'dc_api',
     query: DeepPartialUnknown<PresentationExchange> | DeepPartialUnknown<Dcql>,
     isRequestUri: boolean,
     options: CreateAuthzRequestOptions
   ): Promise<AuthorizationRequest>
+  /**
+   * Decrypts the `response` parameter of an encrypted Authorization Response
+   * (OID4VP 1.1 Section 8.3) and returns the response parameters it carries.
+   *
+   * `session` must be rebuilt from the request parameters the Verifier issued.
+   * With JOSE HPKE it becomes the session_info structure of Section 8.3.1, so a
+   * response captured from a different session fails to decrypt rather than
+   * being accepted.
+   */
+  decryptAuthorizationResponse(
+    verifierId: ClientId,
+    response: string,
+    session: ResponseEncryptionSession
+  ): Promise<AuthorizationResponse>
   findRequestObject(
     verifierId: ClientId,
     objectId: RequestObjectId,
@@ -89,6 +146,23 @@ export type VerifierFlow = {
     options: VerifyPresentationOptions
   ) => Promise<VpTokenPayload>
 }
+
+/** Whether a Response Mode is one of the OID4VP Section 8.3 encrypted variants. */
+const requiresEncryptedResponse = (responseMode: string): boolean =>
+  responseMode === 'direct_post.jwt' || responseMode === 'dc_api.jwt'
+
+/**
+ * Whether the metadata publishes a key a Wallet could encrypt a response to.
+ * Section 8.3 treats keys whose `use` is absent or `enc` as encryption keys and
+ * requires the `alg` member on them.
+ */
+const hasResponseEncryptionKey = (metadata: VerifierMetadata): boolean =>
+  (metadata.jwks?.keys ?? []).some(
+    (key) =>
+      key != null &&
+      (key.use === undefined || key.use === 'enc') &&
+      isSupportedResponseEncryptionAlgorithm(key.alg)
+  )
 
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
   typeof query === 'object' &&
@@ -108,6 +182,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const certificate$ = context.providers.get('certificate-provider')
   const transactionData$ = context.providers.get('transaction-data-provider')
   const verifiablePresentation$ = context.providers.get('verify-verifiable-presentation-provider')
+  const responseEncryptionKey$ = context.providers.get(
+    'verifier-response-encryption-key-store-provider'
+  )
 
   return {
     async findVerifierCertificate(id) {
@@ -219,6 +296,31 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
       await verifierMetadata$.save(verifierId, verifierMetadata)
     },
+    async createResponseEncryptionKeys(verifierId, options) {
+      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('verifier_not_found')
+
+      const algs = options?.algs ?? [...supportedHpkeAlgorithms]
+      const published = await responseEncryptionKey$.save(verifierId, algs, options?.keys)
+
+      // Section 8.3 has the Wallet select the encryption key out of
+      // client_metadata.jwks, so the keys have to end up there. Signing keys
+      // already in the set are left untouched.
+      const existing = (metadata.jwks?.keys ?? []).filter(
+        (key): key is NonNullable<typeof key> =>
+          key != null && !published.some((it) => it.kid !== undefined && it.kid === key.kid)
+      )
+      metadata.jwks = { keys: [...existing, ...published] }
+
+      if (options?.encValuesSupported && options.encValuesSupported.length > 0) {
+        metadata.encrypted_response_enc_values_supported = [...options.encValuesSupported] as [
+          string,
+          ...string[],
+        ]
+      }
+
+      await verifierMetadata$.save(verifierId, metadata)
+      return published
+    },
     async createAuthzRequest(
       verifierId,
       response_type,
@@ -245,6 +347,15 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('verifier_not_found')
+
+      // A ".jwt" Response Mode has the Wallet encrypt the response to a key from
+      // client_metadata.jwks. Without such a key the Wallet has nothing to
+      // encrypt to, so catch it here rather than at the response endpoint.
+      if (requiresEncryptedResponse(response_mode) && !hasResponseEncryptionKey(metadata)) {
+        throw err('invalid_encryption_parameters', {
+          message: `response_mode ${response_mode} requires an encrypted response, but the verifier publishes no encryption key. Call createResponseEncryptionKeys first.`,
+        })
+      }
 
       const args: CredentialQueryGenerationOptions = isPresentationExchange(query)
         ? {
@@ -413,6 +524,10 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       return `${encode(header)}.${encode(payload)}.${signature}`
     },
+    async decryptAuthorizationResponse(verifierId, response, session) {
+      const decrypted = await responseEncryptionKey$.decrypt(verifierId, response, session)
+      return AuthorizationResponse(decrypted)
+    },
     async verifyPresentations(id, response, options) {
       const verifier = await verifierMetadata$.fetch(id)
       if (!verifier) {
@@ -475,3 +590,19 @@ export { RequestObjectId as VerifierRequestObjectId } from './request-object-id.
 export { PresentationExchange } from './presentation-exchange.types'
 export { Dcql } from './dcql.type'
 export { ClientIdentifier } from './client-id-scheme.types'
+export {
+  dcApiSessionInfo,
+  decryptAuthorizationResponse,
+  isSupportedResponseEncryptionAlgorithm,
+  redirectSessionInfo,
+  sessionInfoFor,
+  ResponseEncryptionSession as VerifierResponseEncryptionSession,
+} from './response-encryption'
+export { ResponseEncryptionKeyEntry as VerifierResponseEncryptionKeyEntry } from './response-encryption-key.types'
+export {
+  generateHpkeKeyPair,
+  isHpkeAlgorithm,
+  isSupportedHpkeAlgorithm,
+  supportedHpkeAlgorithms,
+  HpkeAlgorithm,
+} from './jose-hpke'

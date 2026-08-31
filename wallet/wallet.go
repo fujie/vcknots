@@ -1538,9 +1538,9 @@ func (w *Wallet) parseAuthorizationRequest(uriString string) (*oid4vp.Credential
 	}
 
 	var endpoint *url.URL
-	if req.ResponseMode == oid4vp.OAuthAuthzReqResponseModeDirectPost {
+	if req.ResponseMode.UsesResponseURI() {
 		if req.ResponseURI == "" {
-			return nil, nil, fmt.Errorf("response_uri is not specified for response_mode=direct_post")
+			return nil, nil, fmt.Errorf("response_uri is not specified for response_mode=%s", req.ResponseMode)
 		}
 		endpoint, err = url.Parse(req.ResponseURI)
 		if err != nil {
@@ -1745,9 +1745,21 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		DescriptorMap: descriptorMap,
 	}
 
+	// OID4VP Section 8.3.1 binds an HPKE-encrypted response to the session
+	// through client_id, nonce and the response endpoint, so the presenter needs
+	// all three alongside the response parameters.
+	responseURI := req.ResponseURI
+	if responseURI == "" {
+		responseURI = req.RedirectURI
+	}
+
 	presentationRequest := &presenterTypes.PresentationRequest{
 		State:          req.State,
 		ClientMetadata: req.ClientMetadata,
+		ResponseMode:   string(req.ResponseMode),
+		ClientID:       req.ClientID,
+		Nonce:          req.Nonce,
+		ResponseURI:    responseURI,
 	}
 
 	if req.ClientMetadata != nil {

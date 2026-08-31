@@ -31,6 +31,9 @@ import { VerifierMetadata } from '../verifier-metadata.types'
 import type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
 import type { DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
 import { DiVpProof } from '../proofs.types'
+import { Jwk } from '../jwk.type'
+import { ResponseEncryptionKeyEntry } from '../response-encryption-key.types'
+import { ResponseEncryptionSession } from '../response-encryption'
 
 export type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
 export type { DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
@@ -146,6 +149,39 @@ export type VerifierSignatureKeyStoreProvider = {
     jwtPayload: JwtPayload,
     jwtHeader: ProofJwtHeader
   ): Promise<string | null>
+}
+
+/**
+ * Holds the key pairs a Verifier uses to receive encrypted Authorization
+ * Responses (OID4VP 1.1 Section 8.3).
+ *
+ * Unlike signing, decryption needs the private key material itself, so this
+ * store both generates the keys and performs the decryption rather than handing
+ * private keys out.
+ */
+export type VerifierResponseEncryptionKeyStoreProvider = {
+  kind: 'verifier-response-encryption-key-store-provider'
+  name: string
+  single: true
+
+  /**
+   * Generates a key pair per algorithm, or stores the supplied ones, and returns
+   * the public JWKs to publish in `client_metadata.jwks`.
+   */
+  save(verifier: ClientId, keyAlgs: string[], keys?: ResponseEncryptionKeyEntry[]): Promise<Jwk[]>
+
+  /** The public JWKs to publish in `client_metadata.jwks`. */
+  fetch(verifier: ClientId): Promise<Jwk[]>
+
+  /**
+   * Decrypts the `response` parameter of an encrypted Authorization Response,
+   * returning its parameters as top-level members.
+   */
+  decrypt(
+    verifier: ClientId,
+    response: string,
+    session: ResponseEncryptionSession
+  ): Promise<Record<string, unknown>>
 }
 
 export type VerifierCertificateStoreProvider = {
@@ -550,6 +586,7 @@ export type Provider =
   | VerifierMetadataStoreProvider
   | VerifierSignatureKeyProvider
   | VerifierSignatureKeyStoreProvider
+  | VerifierResponseEncryptionKeyStoreProvider
   | CredentialQueryProvider
   | RequestObjectStoreProvider
   | RequestObjectIdProvider

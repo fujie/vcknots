@@ -57,6 +57,24 @@ type PresentationRequest struct {
 	ClientMetadata                interface{}
 	AuthorizationEncryptedRespAlg string
 	AuthorizationEncryptedRespEnc string
+
+	// ResponseMode is the response_mode request parameter. Its ".jwt" variants
+	// require the Authorization Response to be encrypted.
+	ResponseMode string
+
+	// ClientID, Nonce and ResponseURI carry the request parameters that OID4VP
+	// Section 8.3.1 binds an HPKE-encrypted response to through the session_info
+	// structure. ClientID keeps its Client Identifier Prefix, and ResponseURI is
+	// whichever of response_uri or redirect_uri the Response Mode uses.
+	ClientID    string
+	Nonce       string
+	ResponseURI string
+
+	// Origin is the Origin of the request, without the "origin:" prefix. It
+	// takes the place of ClientID and ResponseURI in the session_info structure
+	// when the presentation is invoked through the Digital Credentials API, and
+	// is therefore only meaningful for the dc_api response modes.
+	Origin string
 }
 
 type Presenter interface {

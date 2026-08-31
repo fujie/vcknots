@@ -10,8 +10,8 @@ sidebar_position: 12
 ## 1. 前提条件
 
 - OpenID for Verifiable Presentations - draft 24 に対応（[OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html)）　　
+- 暗号化されたAuthorizationレスポンスは OpenID4VP 1.1 [Section 8.3](https://openid.github.io/OpenID4VP/openid-4-verifiable-presentations-1_1-wg-draft.html#response_encryption) に準拠しています。`response_mode`は`direct_post`と`direct_post.jwt`に対応しています。詳細は[5. 暗号化されたAuthorizationレスポンス](#response-encryption)を参照してください。
 以下は現時点では未実装ですが、今後対応予定です。
-  - `response_mode`は`direct_post`は対応していますが、`direct_post.jwt`は未対応です（現時点では未実装／今後対応予定）。
   - `presentation_definition_uri`に未対応（今後対応予定）
   - vp_token は単一の String 型のみ対応（JSON VP 形式は未対応／今後対応予定）
 - クロスデバイスフローを前提としています
@@ -514,6 +514,96 @@ async function initializeVerifierMetadata(verifierId: string, metadata: Verifier
 ```
 
 
+## 5. 暗号化されたAuthorizationレスポンス（JOSE HPKE）{#response-encryption}
+
+`response_mode=direct_post.jwt` の場合、Walletは平文の`vp_token`フォームフィールドの代わりに、署名なしの暗号化JWTを`response`パラメータ1つに入れて返します（OpenID4VP 1.1 §8.3）。
+
+VCKnotsはこのレスポンスの暗号化・復号に **JOSE HPKE**（[draft-ietf-jose-hpke-encrypt](https://datatracker.ietf.org/doc/html/draft-ietf-jose-hpke-encrypt) の Integrated Encryption モード）を使用します。対応している`alg`は以下のとおりです。
+
+| `alg` | KEM | KDF | AEAD |
+| --- | --- | --- | --- |
+| `HPKE-0` | DHKEM(P-256, HKDF-SHA256) | HKDF-SHA256 | AES-128-GCM |
+| `HPKE-1` | DHKEM(P-384, HKDF-SHA384) | HKDF-SHA384 | AES-256-GCM |
+| `HPKE-2` | DHKEM(P-521, HKDF-SHA512) | HKDF-SHA512 | AES-256-GCM |
+| `HPKE-3` | DHKEM(X25519, HKDF-SHA256) | HKDF-SHA256 | AES-128-GCM |
+| `HPKE-4` | DHKEM(X25519, HKDF-SHA256) | HKDF-SHA256 | ChaCha20Poly1305 |
+| `HPKE-7` | DHKEM(P-256, HKDF-SHA256) | HKDF-SHA256 | AES-256-GCM |
+
+`HPKE-5`と`HPKE-6`はDHKEM(X448)を使用しますが未対応です。Node.jsはX448を扱えますが、Go標準ライブラリには実装がありません。Verifierだけが対応してもこのリポジトリのWalletが応答できないため、両側そろって対象外としています。Key Encryption（`-KE`）系も未対応です。ECDH-ES系も利用でき、その場合は`encrypted_response_enc_values_supported`でコンテンツ暗号化アルゴリズムを指定します（既定値は`A128GCM`）。
+
+### 暗号化鍵の公開
+
+Walletは`client_metadata.jwks`内の鍵に対して暗号化するため、最初の`direct_post.jwt`リクエストを発行する前に鍵を用意しておく必要があります。メタデータ登録後に`createResponseEncryptionKeys`を呼び出してください。
+
+```typescript
+const clientId = VerifierClientId(baseUrl)
+await verifierFlow.createVerifierMetadata(clientId, metadata, option)
+
+// アルゴリズムごとに1つずつ鍵を client_metadata.jwks に公開します。
+// 各鍵には use: "enc"、alg、kid が付きます。
+await verifierFlow.createResponseEncryptionKeys(clientId)
+```
+
+### セッションとの結び付け
+
+§8.3.1 では、WalletとVerifierがそれぞれ独立に計算し、HPKEの`info`パラメータとして渡す`session_info`構造が要求されます。
+
+```
+session_info = ASCII("OpenID4VP-si") || BYTE(255) || ASCII(clientId) ||
+               BYTE(255) || ASCII(nonce) || BYTE(255) || ASCII(responseUri)
+```
+
+セッション情報が鍵スケジュールに組み込まれるため、ある提示から取得したレスポンスを別のセッションの文脈で復号することはできません。異なるセッション情報に紐づくクレデンシャルが受け入れられることはなく、復号は必ず失敗します（fail closed）。
+
+したがってVerifierは、レスポンスに含まれる値ではなく、自身が発行したリクエストパラメータからセッションを再構築する必要があります。また`state`は暗号文の中にあるため、復号前に`state`でトランザクションを特定することはできません。トランザクションごとに固有の`response_uri`を割り当てると両方の問題が同時に解決します。serverサンプルはこの方式を採用しています。
+
+```typescript
+const responseUri = `${baseUrl}/callback/${encodeURIComponent(transactionId)}`
+
+const request = await verifierFlow.createAuthzRequest(
+  verifierId,
+  'vp_token',
+  client_id,
+  'direct_post.jwt',
+  query,
+  false,
+  { response_uri: responseUri, base_url: baseUrl }
+)
+// request.nonce と responseUri を transactionId に紐づけて保存します。
+```
+
+### レスポンスの受信
+
+```typescript
+verifyApp.post('/callback/:transactionId', async (c) => {
+  const formData = await c.req.formData()
+  const response = formData.get('response') as string
+
+  // セッションはレスポンスからではなく、自身が発行した値から組み立てます。
+  const authorizationResponse = await verifierFlow.decryptAuthorizationResponse(
+    verifierId,
+    response,
+    {
+      responseMode: 'direct_post.jwt',
+      clientId: transaction.clientId,
+      nonce: transaction.session.nonce,
+      responseUri: transaction.session.responseUri,
+    }
+  )
+
+  const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+    expectedAud: transaction.clientId,
+  })
+})
+```
+
+`dc_api.jwt`の場合は、セッションはリクエストのOriginで識別されます。
+
+```typescript
+{ responseMode: 'dc_api.jwt', origin: 'https://verifier.example.com', nonce }
+```
+
+
 ## 6. 型定義の説明
 
 ### VerifierClientId {#VerifierClientId}
@@ -649,6 +739,53 @@ createAuthzRequest(
 
 詳細な型定義については、[authorization-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-request.types.ts)を参照してください。
 
+
+### createResponseEncryptionKeys
+VerifierのAuthorizationレスポンス暗号化鍵を生成し、公開JWKを保存済みのVerifierメタデータに公開します（OpenID4VP 1.1 §8.3）。`createVerifierMetadata`の後、`.jwt`系のResponse Modeでリクエストを発行する前に呼び出します。
+
+```typescript
+createResponseEncryptionKeys(
+  verifierId: VerifierClientId,
+  options?: CreateResponseEncryptionKeysOptions
+): Promise<Jwk[]>
+```
+
+**パラメータ**:
+- `verifierId`: Verifierの識別子（[VerifierClientId](#VerifierClientId)）
+- `options.algs`: 鍵を公開するJWEの`alg`値（優先順）。既定値は本ライブラリが対応する全JOSE HPKEアルゴリズム
+- `options.keys`: 生成する代わりに公開する鍵ペア。本ライブラリが鍵生成に対応しないECDH-ES系では必須
+- `options.encValuesSupported`: `encrypted_response_enc_values_supported`として広告するJWEの`enc`値。JOSE HPKEには影響しないため、ECDH-ES鍵と併用する場合にのみ意味があります
+
+**戻り値**:
+- 公開した公開JWKの配列。各鍵は`use: "enc"`、`alg`、`kid`を持ちます
+
+**エラーケース**:
+- `verifier_not_found`: `verifierId`のメタデータが登録されていない
+- `invalid_options`: 鍵生成にも利用にも対応していないアルゴリズムが指定された
+
+### decryptAuthorizationResponse
+暗号化されたAuthorizationレスポンスの`response`パラメータを復号し、そこに含まれるレスポンスパラメータを返します。
+
+```typescript
+decryptAuthorizationResponse(
+  verifierId: VerifierClientId,
+  response: string,
+  session: VerifierResponseEncryptionSession
+): Promise<VerifierAuthorizationResponse>
+```
+
+**パラメータ**:
+- `verifierId`: Verifierの識別子（[VerifierClientId](#VerifierClientId)）
+- `response`: `response`フォームパラメータ（JWE Compact Serialization）
+- `session`: 自身が発行したリクエストパラメータから再構築したセッション。`{ responseMode: 'direct_post.jwt', clientId, nonce, responseUri }` または `{ responseMode: 'dc_api.jwt', origin, nonce }`
+
+**戻り値**:
+- Authorizationレスポンスのパラメータ（[VerifierAuthorizationResponse](#Verifierauthorizationresponse)）
+
+**エラーケース**:
+- `authz_verifier_key_not_found`: レスポンスの`alg`と`kid`に一致する鍵をVerifierが保持していない
+- `invalid_encryption_parameters`: 未対応のアルゴリズムが使われている、または復号に失敗した。セッション不一致もこの原因のひとつで、これは §8.3.1 が意図する fail closed の挙動です
+- `invalid_request`: 復号後のペイロードがJSONオブジェクトではない
 
 ### findRequestObject
 createAuthzRequestでJAR形式のレスポンスの場合に、JAR形式のリクエストオブジェクトを取得します。

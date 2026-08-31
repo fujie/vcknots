@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/trustknots/vcknots/wallet/common/jwks"
 )
 
 // PresentationDefinition represents a presentation definition
@@ -33,7 +34,29 @@ const (
 	// OAuthAuthzReqResponseModeDirectPost indicates that the authorization response should be returned as a direct POST
 	// newly defined in OID4VP
 	OAuthAuthzReqResponseModeDirectPost OAuthAuthzReqResponseMode = "direct_post"
+	// OAuthAuthzReqResponseModeDirectPostJWT is direct_post with the response
+	// encrypted as defined in OID4VP Section 8.3.
+	OAuthAuthzReqResponseModeDirectPostJWT OAuthAuthzReqResponseMode = "direct_post.jwt"
+	// OAuthAuthzReqResponseModeDCAPI indicates that the authorization response is
+	// returned through the Digital Credentials API, unencrypted.
+	OAuthAuthzReqResponseModeDCAPI OAuthAuthzReqResponseMode = "dc_api"
+	// OAuthAuthzReqResponseModeDCAPIJWT is dc_api with the response encrypted as
+	// defined in OID4VP Section 8.3.
+	OAuthAuthzReqResponseModeDCAPIJWT OAuthAuthzReqResponseMode = "dc_api.jwt"
 )
+
+// RequiresEncryptedResponse reports whether the Response Mode is one of the
+// ".jwt" variants, for which OID4VP Section 8.3 requires the Authorization
+// Response to be encrypted.
+func (m OAuthAuthzReqResponseMode) RequiresEncryptedResponse() bool {
+	return m == OAuthAuthzReqResponseModeDirectPostJWT || m == OAuthAuthzReqResponseModeDCAPIJWT
+}
+
+// UsesResponseURI reports whether the Response Mode delivers the Authorization
+// Response to response_uri rather than to redirect_uri.
+func (m OAuthAuthzReqResponseMode) UsesResponseURI() bool {
+	return m == OAuthAuthzReqResponseModeDirectPost || m == OAuthAuthzReqResponseModeDirectPostJWT
+}
 
 // OAuthAuthorizationResponse represents a OAuth 2.0 Authorization Response
 // These fields are defined in RFC6749.
@@ -95,32 +118,38 @@ const (
 // VerifierMetadata represents the Verifier Metadata (Client Metadata) in OID4VP.
 // These fields are defined in RFC7591 and the OID4VP specification, and stated as optional.
 type VerifierMetadata struct {
-	RedirectURIs                      []string           `json:"redirect_uris,omitempty"`
-	TokenEndpointAuthMethod           string             `json:"token_endpoint_auth_method,omitempty"`
-	GrantTypes                        []string           `json:"grant_types,omitempty"`
-	ResponseTypes                     []string           `json:"response_types,omitempty"`
-	ClientName                        string             `json:"client_name,omitempty"`
-	ClientURI                         string             `json:"client_uri,omitempty"`
-	LogoURI                           string             `json:"logo_uri,omitempty"`
-	Scope                             string             `json:"scope,omitempty"`
-	Contacts                          []string           `json:"contacts,omitempty"`
-	ToSURI                            string             `json:"tos_uri,omitempty"`
-	PolicyURI                         string             `json:"policy_uri,omitempty"`
-	JwksURI                           string             `json:"jwks_uri,omitempty"`
-	Jwks                              jose.JSONWebKeySet `json:"jwks,omitempty"`
-	SoftwareID                        string             `json:"software_id,omitempty"`
-	SoftwareVersion                   string             `json:"software_version,omitempty"`
-	AuthorizationEncryptedResponseAlg string             `json:"authorization_encrypted_response_alg,omitempty"`
-	AuthorizationEncryptedResponseEnc string             `json:"authorization_encrypted_response_enc,omitempty"`
+	RedirectURIs                      []string `json:"redirect_uris,omitempty"`
+	TokenEndpointAuthMethod           string   `json:"token_endpoint_auth_method,omitempty"`
+	GrantTypes                        []string `json:"grant_types,omitempty"`
+	ResponseTypes                     []string `json:"response_types,omitempty"`
+	ClientName                        string   `json:"client_name,omitempty"`
+	ClientURI                         string   `json:"client_uri,omitempty"`
+	LogoURI                           string   `json:"logo_uri,omitempty"`
+	Scope                             string   `json:"scope,omitempty"`
+	Contacts                          []string `json:"contacts,omitempty"`
+	ToSURI                            string   `json:"tos_uri,omitempty"`
+	PolicyURI                         string   `json:"policy_uri,omitempty"`
+	JwksURI                           string   `json:"jwks_uri,omitempty"`
+	Jwks                              jwks.Set `json:"jwks,omitempty"`
+	SoftwareID                        string   `json:"software_id,omitempty"`
+	SoftwareVersion                   string   `json:"software_version,omitempty"`
+	AuthorizationEncryptedResponseAlg string   `json:"authorization_encrypted_response_alg,omitempty"`
+	AuthorizationEncryptedResponseEnc string   `json:"authorization_encrypted_response_enc,omitempty"`
+
+	// EncryptedResponseEncValuesSupported lists the JWE "enc" values the
+	// Verifier accepts for the encrypted Authorization Response, replacing
+	// authorization_encrypted_response_enc in OID4VP 1.1. It has no effect when
+	// JOSE HPKE Integrated Encryption is used, because that mode has no separate
+	// content encryption algorithm.
+	EncryptedResponseEncValuesSupported []string `json:"encrypted_response_enc_values_supported,omitempty"`
 }
 
 func (v *VerifierMetadata) FetchKeyWithKID(kid string) (jose.JSONWebKey, error) {
-	for _, key := range v.Jwks.Keys {
-		if key.KeyID == kid {
-			return key, nil
-		}
+	key, found := v.Jwks.ByKeyID(kid)
+	if !found {
+		return jose.JSONWebKey{}, fmt.Errorf("key with kid %s not found", kid)
 	}
-	return jose.JSONWebKey{}, fmt.Errorf("key with kid %s not found", kid)
+	return key.JOSE()
 }
 
 // GrantTypes supported by the OID4VP plugin
