@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/trustknots/vcknots/wallet/common/dcql"
 	"github.com/trustknots/vcknots/wallet/common/jwks"
 )
 
@@ -98,12 +99,18 @@ const (
 // These fields are defined in the OID4VP specification and RFC6749.
 type CredentialPresentationRequest struct {
 	*OAuthAuthzRequest
-	PresentationDefinition   *PresentationDefinition `json:"presentation_definition"`               // required
-	ClientMetadata           *VerifierMetadata       `json:"client_metadata,omitempty"`             // optional
-	TransactionData          []string                `json:"transaction_data,omitempty"`            // optional, to be implemented
-	TransactionDataHashesAlg string                  `json:"transaction_data_hashes_alg,omitempty"` // optional, hash algorithm for transaction_data_hashes
-	VerifierInfo             []any                   `json:"verifier_info,omitempty"`               // optional, to be implemented
-	ResponseURI              string                  `json:"response_uri,omitempty"`                // optional
+	// PresentationDefinition carries a Presentation Exchange query. OpenID4VP
+	// 1.0 removed Presentation Exchange in favour of DCQL, so exactly one of
+	// this and DCQLQuery is set.
+	PresentationDefinition *PresentationDefinition `json:"presentation_definition,omitempty"`
+	// DCQLQuery carries the Digital Credentials Query Language query of
+	// OpenID4VP 1.0 Section 6.
+	DCQLQuery                *dcql.Query       `json:"dcql_query,omitempty"`
+	ClientMetadata           *VerifierMetadata `json:"client_metadata,omitempty"`             // optional
+	TransactionData          []string          `json:"transaction_data,omitempty"`            // optional, to be implemented
+	TransactionDataHashesAlg string            `json:"transaction_data_hashes_alg,omitempty"` // optional, hash algorithm for transaction_data_hashes
+	VerifierInfo             []any             `json:"verifier_info,omitempty"`               // optional, to be implemented
+	ResponseURI              string            `json:"response_uri,omitempty"`                // optional
 }
 
 type RequestURIMethod string
@@ -142,6 +149,12 @@ type VerifierMetadata struct {
 	// JOSE HPKE Integrated Encryption is used, because that mode has no separate
 	// content encryption algorithm.
 	EncryptedResponseEncValuesSupported []string `json:"encrypted_response_enc_values_supported,omitempty"`
+}
+
+// UsesDCQL reports whether the request carries a DCQL query rather than a
+// Presentation Exchange presentation_definition.
+func (r *CredentialPresentationRequest) UsesDCQL() bool {
+	return r != nil && r.DCQLQuery != nil
 }
 
 func (v *VerifierMetadata) FetchKeyWithKID(kid string) (jose.JSONWebKey, error) {

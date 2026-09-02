@@ -24,6 +24,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -37,6 +38,7 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/uuid"
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/common/dcql"
 	joseutil "github.com/trustknots/vcknots/wallet/common/jose"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
@@ -1490,7 +1492,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 		return "", err
 	}
 
-	credentials, flavor, err := w.selectCredentialsForPresentation(req)
+	credentials, flavor, credentialQueryID, err := w.selectCredentialsForPresentation(req)
 	if err != nil {
 		return "", err
 	}
@@ -1513,7 +1515,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 		return "", err
 	}
 
-	redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, descriptorMap, req, key, serializeOptions)
+	redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, descriptorMap, req, key, serializeOptions, credentialQueryID)
 	if err != nil {
 		return "", err
 	}
@@ -1560,17 +1562,26 @@ func (w *Wallet) parseAuthorizationRequest(uriString string) (*oid4vp.Credential
 	return req, endpoint, nil
 }
 
-// selectCredentialsForPresentation selects credentials matching the presentation definition.
-func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresentationRequest) ([]*SavedCredential, *credential.SupportedSerializationFlavor, error) {
+// selectCredentialsForPresentation selects credentials that answer the request.
+//
+// A DCQL query (OpenID4VP 1.0) is evaluated against the held Credentials. A
+// Presentation Exchange request falls back to the previous behaviour of taking
+// the most recent Credential, since this wallet does not evaluate a
+// presentation_definition.
+func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresentationRequest) ([]*SavedCredential, *credential.SupportedSerializationFlavor, string, error) {
 	entries, _, err := w.GetCredentialEntries(GetCredentialEntriesRequest{
 		Offset: 0,
 		Limit:  nil,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get credential entries: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to get credential entries: %w", err)
 	}
 	if len(entries) == 0 {
-		return nil, nil, fmt.Errorf("no credentials available for presentation")
+		return nil, nil, "", fmt.Errorf("no credentials available for presentation")
+	}
+
+	if req.UsesDCQL() {
+		return w.selectCredentialsByDCQL(req.DCQLQuery, entries)
 	}
 
 	selectedCredentials := newestCredentials(entries, 1)
@@ -1578,10 +1589,99 @@ func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresenta
 	// Validate that all selected credentials have the same serialization flavor
 	serializationFlavor, err := w.validateSerializationFlavor(selectedCredentials)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
-	return selectedCredentials, serializationFlavor, nil
+	return selectedCredentials, serializationFlavor, "", nil
+}
+
+// selectCredentialsByDCQL evaluates a DCQL query against the held Credentials
+// and returns the ones that answer it, together with the Credential Query id
+// they answer. That id becomes the key in the vp_token object of the response.
+//
+// Answering more than one Credential Query at once is not supported yet: the
+// presentation pipeline builds a single Verifiable Presentation, so a query that
+// needs several Credential Queries answered is reported rather than partially
+// satisfied.
+func (w *Wallet) selectCredentialsByDCQL(query *dcql.Query, entries []*SavedCredential) ([]*SavedCredential, *credential.SupportedSerializationFlavor, string, error) {
+	candidates := make([]dcql.Candidate, 0, len(entries))
+	for _, entry := range entries {
+		candidate, err := dcqlCandidate(entry)
+		if err != nil {
+			// A Credential this wallet cannot decode simply does not match.
+			continue
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	selections, err := query.Select(candidates)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if len(selections) != 1 {
+		return nil, nil, "", fmt.Errorf(
+			"answering %d Credential Queries in one response is not supported yet", len(selections))
+	}
+
+	selection := selections[0]
+	selected := make([]*SavedCredential, 0, len(selection.Candidates))
+	for _, candidate := range selection.Candidates {
+		saved, ok := candidate.Ref.(*SavedCredential)
+		if !ok {
+			return nil, nil, "", fmt.Errorf("internal error: a DCQL candidate lost its credential")
+		}
+		selected = append(selected, saved)
+	}
+
+	serializationFlavor, err := w.validateSerializationFlavor(selected)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return selected, serializationFlavor, selection.CredentialID, nil
+}
+
+// dcqlCandidate reduces a stored Credential to what a DCQL query needs: its
+// Credential Format Identifier and its decoded claim set.
+func dcqlCandidate(entry *SavedCredential) (dcql.Candidate, error) {
+	flavor, err := entry.Entry.SerializationFlavor()
+	if err != nil {
+		return dcql.Candidate{}, err
+	}
+	format, _, err := flavor.OID4VPFormatIdentifier()
+	if err != nil {
+		return dcql.Candidate{}, err
+	}
+
+	claims, err := decodeCredentialClaims(entry.Entry.Raw)
+	if err != nil {
+		return dcql.Candidate{}, err
+	}
+
+	return dcql.Candidate{Format: format, Claims: claims, Ref: entry}, nil
+}
+
+// decodeCredentialClaims reads the claim set a claims path pointer applies to.
+// The signature was checked when the Credential was received, so this only
+// decodes.
+func decodeCredentialClaims(raw []byte) (any, error) {
+	// An SD-JWT VC is the issuer-signed JWT followed by tilde-separated
+	// disclosures, so the JWT is whatever precedes the first tilde.
+	token, _, _ := strings.Cut(string(raw), "~")
+
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("the credential is not a JWT")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("the credential payload is not base64url: %w", err)
+	}
+
+	var claims any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, fmt.Errorf("the credential payload is not JSON: %w", err)
+	}
+	return claims, nil
 }
 
 func newestCredentials(entries []*SavedCredential, limit int) []*SavedCredential {
@@ -1715,7 +1815,7 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.
-func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
+func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions, credentialQueryID string) (string, error) {
 	if len(req.TransactionData) > 0 {
 		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
 			transactionDataHashesAlg := req.TransactionDataHashesAlg
@@ -1739,10 +1839,15 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		return "", fmt.Errorf("failed to serialize presentation: %w", err)
 	}
 
-	presentationSubmission := presenterTypes.PresentationSubmission{
-		ID:            uuid.New().String(),
-		DefinitionID:  req.PresentationDefinition.ID,
-		DescriptorMap: descriptorMap,
+	// A DCQL response has no presentation_submission: OpenID4VP 1.0 removed the
+	// parameter together with Presentation Exchange.
+	var presentationSubmission presenterTypes.PresentationSubmission
+	if credentialQueryID == "" {
+		presentationSubmission = presenterTypes.PresentationSubmission{
+			ID:            uuid.New().String(),
+			DefinitionID:  req.PresentationDefinition.ID,
+			DescriptorMap: descriptorMap,
+		}
 	}
 
 	// OID4VP Section 8.3.1 binds an HPKE-encrypted response to the session
@@ -1754,12 +1859,13 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 	}
 
 	presentationRequest := &presenterTypes.PresentationRequest{
-		State:          req.State,
-		ClientMetadata: req.ClientMetadata,
-		ResponseMode:   string(req.ResponseMode),
-		ClientID:       req.ClientID,
-		Nonce:          req.Nonce,
-		ResponseURI:    responseURI,
+		State:             req.State,
+		CredentialQueryID: credentialQueryID,
+		ClientMetadata:    req.ClientMetadata,
+		ResponseMode:      string(req.ResponseMode),
+		ClientID:          req.ClientID,
+		Nonce:             req.Nonce,
+		ResponseURI:       responseURI,
 	}
 
 	if req.ClientMetadata != nil {

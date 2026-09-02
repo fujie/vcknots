@@ -6,6 +6,8 @@ sidebar_position: 21
 
 下記の表は、[OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) および [OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html) を基準に、このリポジトリの現在の実装範囲を整理したものです。
 
+draft 24 ではなく [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) に従っている機能、特にクエリ言語とレスポンスの形式については、該当する行のリンク先を 1.0 とし、備考欄にもその旨を記載しています。
+
 `✅` は該当ロールで実装済み、`❌` は未実装またはエンドツーエンドでは利用できないことを示します。設定に依存する機能は、備考欄に条件を記載しています。
 
 ## OpenID for Verifiable Credential Issuance 1.0
@@ -41,8 +43,9 @@ sidebar_position: 21
 | 仕様セクション | 機能領域 | 仕様上の役割・機能 | Verifier | Wallet | 備考 |
 | --- | --- | --- | --- | --- | --- |
 | [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | Authorization Request | `v0.6.0` 以降<br />✅ `request_uri`、URL エンコードされたパラメータ | ✅ `request`、`request_uri`、URL エンコードされたパラメータ |  |
-| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-6) | Credential Query | DCQL | ❌ | ❌ |  |
-| [5.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4) | Credential Query | Presentation Exchange | `v0.6.0` 以降<br />✅ | ✅ | 外部仕様: [DIF Presentation Exchange](https://identity.foundation/presentation-exchange/spec/v2.1.1) |
+| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6) | Credential Query | DCQL | ✅ | ✅ | OpenID4VP 1.0 §6。`credential_sets`、`claim_sets`、`multiple`、`trusted_authorities` に対応しています。Wallet が 1 回のレスポンスで応答できるのは 1 つの Credential Query までで、複数の Credential Query に同時に応答する必要があるクエリは、部分的に応答するのではなくエラーとして扱います。 |
+| [7](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7) | Credential Query | Claims Path Pointer | ✅ | ✅ | 3 種類の要素すべてに対応しています。キー、0 以上の整数、および配列の全要素を選択する `null` です。 |
+| [5.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4) | Credential Query | Presentation Exchange | `v0.6.0` 以降<br />✅ | ✅ | OpenID4VP 1.0 では DCQL に置き換えられ廃止されましたが、まだ 1.0 に移行していない Wallet のために残しています。外部仕様: [DIF Presentation Exchange](https://identity.foundation/presentation-exchange/spec/v2.1.1) |
 | [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | 署名付き Authorization Request（JAR） | `v0.6.0` 以降<br />✅ | ✅ | Request Objectを使用。外部仕様: [RFC 9101](https://www.rfc-editor.org/info/rfc9101) |
 | [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | 暗号化された Authorization Request（JAR） | ❌ | ❌ | 外部仕様: [RFC 9101](https://www.rfc-editor.org/info/rfc9101) |
 | [5.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.6) | Credential Query | スコープを使用した Authorization Request | ❌ | ❌ |  |
@@ -50,6 +53,7 @@ sidebar_position: 21
 | [5.11](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11) | Request URI | Request URI Method | `v0.6.0` 以降<br />✅ GET | ✅ GET、POST |  |
 | [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ |  |
 | [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.1) | Authorization Response | Authorization Response | `v0.6.0` 以降<br />✅ | ✅ |  |
+| [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1) | Authorization Response | Credential Query の id をキーとするオブジェクト形式の `vp_token` | ✅ | ✅ | OpenID4VP 1.0 の形式で、DCQL のリクエストに対して返します。1.0 で `presentation_submission` が廃止されたため、この形式では送信しません。Presentation Exchange のリクエストに対しては従来の形式を返します。 |
 | [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ❌ |  |
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.3) | Authorization Response | 暗号化された Authorization Response | ✅ | ✅ | `ECDH-ES` と JOSE HPKE の両方に対応。`encrypted_response_enc_values_supported` は `ECDH-ES` のコンテンツ暗号化アルゴリズム選択に使われ（既定値 `A128GCM`）、HPKE には適用されません。 |
 | [8.3.1](https://openid.github.io/OpenID4VP/openid-4-verifiable-presentations-1_1-wg-draft.html#name-encryption-using-hpke) | Authorization Response | HPKE による暗号化 | ✅ `HPKE-0`、`HPKE-1`、`HPKE-2`、`HPKE-3`、`HPKE-4`、`HPKE-7` | ✅ `HPKE-0`、`HPKE-1`、`HPKE-2`、`HPKE-3`、`HPKE-4`、`HPKE-7` | OpenID4VP 1.1 §8.3.1、Integrated Encryption のみ。`session_info` 構造により `client_id`／`nonce`／`response_uri`（`dc_api.jwt` の場合は Origin）とレスポンスが結び付きます。`HPKE-5` と `HPKE-6` は DHKEM(X448) を必要とします。Node.js は扱えますが Go 標準ライブラリには実装がないため、両側そろって対象外としています。外部仕様: [draft-ietf-jose-hpke-encrypt](https://datatracker.ietf.org/doc/html/draft-ietf-jose-hpke-encrypt) |

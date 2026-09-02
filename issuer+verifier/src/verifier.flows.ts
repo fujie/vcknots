@@ -1,6 +1,6 @@
 import base64url from 'base64url'
 import { AuthorizationRequest } from './authorization-request.types'
-import { AuthorizationResponse } from './authorization-response.types'
+import { AuthorizationResponse, DcqlVpToken, isDcqlVpToken } from './authorization-response.types'
 import { ClientId } from './client-id.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
@@ -22,6 +22,8 @@ import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { VpTokenPayload } from './presentation.types'
 import { supportedHpkeAlgorithms } from './jose-hpke'
+import { matchesCredentialQuery, validateVpTokenAgainstQuery } from './dcql'
+import { DcqlQuery } from './dcql-query.types'
 import {
   isSupportedResponseEncryptionAlgorithm,
   ResponseEncryptionSession,
@@ -77,6 +79,53 @@ export type CreateResponseEncryptionKeysOptions = {
    * so it is only worth setting alongside an ECDH-ES key.
    */
   encValuesSupported?: string[]
+}
+
+/** What a DCQL response yielded, grouped by the Credential Query it answers. */
+export type DcqlPresentationResult = {
+  presentations: Record<string, VpTokenPayload[]>
+}
+
+/**
+ * DCQL states the Credential Format Identifier, while the presentation
+ * verification providers are keyed by the format of the Presentation. For
+ * SD-JWT VC the two coincide; for a W3C Credential requested as `jwt_vc_json`
+ * the Presentation is a VP JWT, which this library registers as `jwt_vp_json`.
+ */
+const presentationFormatFor = (credentialFormat: string): string =>
+  credentialFormat === 'jwt_vc_json' ? 'jwt_vp_json' : credentialFormat
+
+/**
+ * The claim sets a verified Presentation carries, which is what a claims path
+ * pointer is applied to.
+ *
+ * For SD-JWT VC the verified payload already is the Credential's claim set. A
+ * W3C Verifiable Presentation is a wrapper, so the Credentials inside it have to
+ * be unwrapped first — applying the pointer to the Presentation would look for
+ * claims one level too high.
+ */
+const credentialClaimSets = (credentialFormat: string, payload: VpTokenPayload): unknown[] => {
+  if (credentialFormat !== 'jwt_vc_json') return [payload]
+
+  const vp = (payload as Record<string, unknown>).vp
+  const credentials =
+    typeof vp === 'object' && vp !== null
+      ? (vp as Record<string, unknown>).verifiableCredential
+      : undefined
+  if (!Array.isArray(credentials)) return []
+
+  return credentials.map((credential) => {
+    // A Credential inside a VP is normally the encoded JWT; decoding it is safe
+    // here because the Presentation has already been verified.
+    if (typeof credential !== 'string') return credential
+    const [, encodedPayload] = credential.split('.')
+    if (!encodedPayload) return undefined
+    try {
+      return JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'))
+    } catch {
+      return undefined
+    }
+  })
 }
 
 export type FindRequestObjectOptions = {
@@ -145,6 +194,23 @@ export type VerifierFlow = {
     response: AuthorizationResponse,
     options: VerifyPresentationOptions
   ) => Promise<VpTokenPayload>
+  /**
+   * Verifies a `vp_token` returned for a DCQL query (OpenID4VP 1.0).
+   *
+   * The response is checked against the query that produced it — the keys name
+   * Credential Queries, `multiple` is respected, and the required Credential Set
+   * Queries are answered — and then every Presentation is verified for its
+   * format.
+   *
+   * {@link VerifierFlow.verifyPresentations} remains for the Presentation
+   * Exchange responses this library still accepts.
+   */
+  verifyDcqlPresentations(
+    verifierId: ClientId,
+    response: AuthorizationResponse,
+    query: DcqlQuery,
+    options: VerifyPresentationOptions
+  ): Promise<DcqlPresentationResult>
 }
 
 /** Whether a Response Mode is one of the OID4VP Section 8.3 encrypted variants. */
@@ -528,6 +594,84 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const decrypted = await responseEncryptionKey$.decrypt(verifierId, response, session)
       return AuthorizationResponse(decrypted)
     },
+    async verifyDcqlPresentations(verifierId, response, query, options) {
+      const verifier = await verifierMetadata$.fetch(verifierId)
+      if (!verifier) {
+        throw raise('verifier_not_found', { message: 'verifier is not found.' })
+      }
+
+      if (!isDcqlVpToken(response.vp_token)) {
+        throw err('unsupported_vp_token', {
+          message:
+            'vp_token must be an object mapping Credential Query ids to non-empty arrays of Presentations.',
+        })
+      }
+      const vpToken: DcqlVpToken = response.vp_token
+
+      const structure = validateVpTokenAgainstQuery(query, vpToken)
+      if (!structure.valid) {
+        throw err('invalid_vp_token', { message: structure.reason })
+      }
+
+      const presentations: Record<string, VpTokenPayload[]> = {}
+      for (const [credentialId, entries] of Object.entries(vpToken)) {
+        const credentialQuery = query.credentials.find(
+          (credential) => credential.id === credentialId
+        )
+        if (!credentialQuery) {
+          // validateVpTokenAgainstQuery already rejected unknown ids.
+          throw err('illegal_state', { message: `Credential Query ${credentialId} disappeared.` })
+        }
+
+        const format = presentationFormatFor(credentialQuery.format)
+        const verifyOptions: VerifyVerifiablePresentationVerifyOptions =
+          format === 'dc+sd-jwt'
+            ? {
+                kind: 'dc+sd-jwt',
+                specifiedDisclosures: options.specifiedDisclosures,
+                isKbJwt: options.isKbJwt,
+                expectedAud: options.expectedAud,
+                expectedNonce: options.expectedNonce,
+                expectedTransactionDataHashes: options.expectedTransactionDataHashes,
+              }
+            : { kind: 'jwt_vp_json', expectedAud: options.expectedAud }
+
+        const verified: VpTokenPayload[] = []
+        for (const entry of entries) {
+          if (typeof entry !== 'string') {
+            throw err('unsupported_vp_token', {
+              message: `vp_token["${credentialId}"] holds a non-string Presentation, which is not supported yet.`,
+            })
+          }
+          const payload = await selectProvider(verifiablePresentation$, format).verify(
+            entry,
+            verifyOptions
+          )
+
+          // A Presentation that verifies but does not answer the query is not an
+          // acceptable response, so the claims are checked against the query too.
+          // One Presentation can carry several Credentials; any one of them
+          // answering the query is enough.
+          const candidates = credentialClaimSets(credentialQuery.format, payload)
+          const matches = candidates.map((claims) =>
+            matchesCredentialQuery(credentialQuery, { format: credentialQuery.format, claims })
+          )
+          if (!matches.some((match) => match.matched)) {
+            const reason =
+              matches.find((match) => !match.matched)?.reason ??
+              'the presentation carries no credential'
+            throw err('invalid_vp_token', {
+              message: `vp_token["${credentialId}"] does not satisfy its Credential Query: ${reason}`,
+            })
+          }
+
+          verified.push(payload)
+        }
+        presentations[credentialId] = verified
+      }
+
+      return { presentations }
+    },
     async verifyPresentations(id, response, options) {
       const verifier = await verifierMetadata$.fetch(id)
       if (!verifier) {
@@ -589,6 +733,7 @@ export { ClientIdScheme as VerifierClientIdScheme } from './client-id-scheme.typ
 export { RequestObjectId as VerifierRequestObjectId } from './request-object-id.types'
 export { PresentationExchange } from './presentation-exchange.types'
 export { Dcql } from './dcql.type'
+export { DcqlQuery } from './dcql-query.types'
 export { ClientIdentifier } from './client-id-scheme.types'
 export {
   dcApiSessionInfo,

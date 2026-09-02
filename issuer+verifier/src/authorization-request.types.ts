@@ -10,6 +10,13 @@ import { commonReqSchema } from './request-object.types'
 
 const commonAuthzRequestSchema = commonReqSchema.extend({
   response_type: z.union([z.literal('vp_token'), z.literal('id_token'), z.string()]).optional(),
+  /**
+   * @deprecated Removed in OpenID4VP 1.0, which carries the Client Identifier
+   * Prefix inside `client_id` instead (for example
+   * `x509_san_dns:verifier.example.com`). Still emitted and accepted for
+   * compatibility with draft 24 Wallets; behaviour is driven by the prefix in
+   * `client_id`, never by this parameter.
+   */
   client_id_scheme: z.string().optional(),
   client_metadata_uri: z.string().optional(),
   response_mode: z.enum(['direct_post', 'direct_post.jwt', 'query', 'fragment']).optional(),

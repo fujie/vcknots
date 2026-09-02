@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ClientIdentifier } from '@trustknots/vcknots/verifier'
+import type { ClientIdentifier, DcqlQuery } from '@trustknots/vcknots/verifier'
 
 /** Default TTL for in-memory `direct_post` VP-aud binding transactions (10 minutes). */
 export const DEFAULT_DIRECT_POST_VP_AUD_TTL_MS = 10 * 60 * 1000
@@ -8,6 +8,12 @@ type DirectPostVpAudTransaction = {
   clientId: ClientIdentifier
   state: string
   expiresAt: number
+  /**
+   * The DCQL query the request carried, when it used one. The response has to be
+   * checked against it, so the query has to outlive the request. A transaction
+   * without one used Presentation Exchange.
+   */
+  dcqlQuery?: DcqlQuery
 }
 
 export type DirectPostVpAudTransactionStore = {
@@ -20,14 +26,28 @@ export type DirectPostVpAudTransactionStore = {
   resolveExpectedAudFromWalletState: (
     state: string | undefined
   ) =>
-    | { ok: true; aud: ClientIdentifier; transactionId: string }
+    | { ok: true; aud: ClientIdentifier; transactionId: string; dcqlQuery?: DcqlQuery }
     | { ok: false; error: { error: string; error_description: string } }
   consume: (transactionId: string, state: string) => void
+  /**
+   * Records the DCQL query the request carried, so the callback can check the
+   * `vp_token` against the query that produced it.
+   */
+  bindDcqlQuery: (
+    transactionId: string,
+    query: DcqlQuery
+  ) => { ok: true } | { ok: false; notFound: true }
   deleteById: (transactionId: string) => { ok: true } | { ok: false; notFound: true }
   getById: (
     transactionId: string
   ) =>
-    | { kind: 'ok'; state: string; clientId: ClientIdentifier; expiresAt: number }
+    | {
+        kind: 'ok'
+        state: string
+        clientId: ClientIdentifier
+        expiresAt: number
+        dcqlQuery?: DcqlQuery
+      }
     | { kind: 'not_found' }
     | { kind: 'expired' }
 }
@@ -82,7 +102,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
   const resolveExpectedAudFromWalletState = (
     state: string | undefined
   ):
-    | { ok: true; aud: ClientIdentifier; transactionId: string }
+    | { ok: true; aud: ClientIdentifier; transactionId: string; dcqlQuery?: DcqlQuery }
     | { ok: false; error: { error: string; error_description: string } } => {
     if (state == null || state.trim() === '') {
       return {
@@ -135,7 +155,19 @@ export function createDirectPostVpAudTransactionStore(options?: {
         },
       }
     }
-    return { ok: true, aud: rec.clientId, transactionId }
+    return { ok: true, aud: rec.clientId, transactionId, dcqlQuery: rec.dcqlQuery }
+  }
+
+  const bindDcqlQuery = (
+    transactionId: string,
+    query: DcqlQuery
+  ): { ok: true } | { ok: false; notFound: true } => {
+    const rec = byId.get(transactionId)
+    if (rec === undefined) {
+      return { ok: false, notFound: true }
+    }
+    byId.set(transactionId, { ...rec, dcqlQuery: query })
+    return { ok: true }
   }
 
   const deleteById = (
@@ -152,7 +184,13 @@ export function createDirectPostVpAudTransactionStore(options?: {
   const getById = (
     transactionId: string
   ):
-    | { kind: 'ok'; state: string; clientId: ClientIdentifier; expiresAt: number }
+    | {
+        kind: 'ok'
+        state: string
+        clientId: ClientIdentifier
+        expiresAt: number
+        dcqlQuery?: DcqlQuery
+      }
     | { kind: 'not_found' }
     | { kind: 'expired' } => {
     const rec = byId.get(transactionId)
@@ -163,13 +201,20 @@ export function createDirectPostVpAudTransactionStore(options?: {
       consume(transactionId, rec.state)
       return { kind: 'expired' }
     }
-    return { kind: 'ok', state: rec.state, clientId: rec.clientId, expiresAt: rec.expiresAt }
+    return {
+      kind: 'ok',
+      state: rec.state,
+      clientId: rec.clientId,
+      expiresAt: rec.expiresAt,
+      dcqlQuery: rec.dcqlQuery,
+    }
   }
 
   return {
     register,
     resolveExpectedAudFromWalletState,
     consume,
+    bindDcqlQuery,
     deleteById,
     getById,
   }

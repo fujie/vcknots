@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
 // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
+/**
+ * The Client Identifier Prefixes of OpenID4VP 1.0 Section 5.9. The type keeps
+ * its historical name because it is part of the published API; the concept the
+ * specification defines is the prefix carried inside `client_id`, not the
+ * separate `client_id_scheme` request parameter that 1.0 removed.
+ */
 export const ClientIdSchemeSchema = z.enum([
   'redirect_uri',
   'https',

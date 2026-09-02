@@ -8,11 +8,53 @@ import {
   VerifierClientId,
   ClientIdentifier,
   PresentationExchange,
+  Dcql,
+  DcqlQuery,
 } from '@trustknots/vcknots/verifier'
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
 import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
 import { err } from '@trustknots/vcknots/errors'
+
+/**
+ * Reads the `vp_token` of a form-encoded Authorization Response.
+ *
+ * OpenID4VP 1.0 §8.1 defines `vp_token` as a JSON object, but §8.2 sends the
+ * response as `application/x-www-form-urlencoded`, where every parameter is a
+ * string. The specification does not say how the object survives that encoding,
+ * so a Wallet sends the JSON text and a Verifier has to decide for itself
+ * whether a given string is the object or a bare Presentation.
+ *
+ * The rule here: a string that parses as a JSON object is the 1.0 `vp_token`;
+ * anything else is the single Presentation a Presentation Exchange response
+ * carries. A Presentation is a JWT or an SD-JWT VC, neither of which parses as a
+ * JSON object, so the two cannot be confused.
+ */
+const decodeVpTokenField = (value: string): string | Record<string, unknown> => {
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('{')) {
+    return value
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : value
+  } catch {
+    return value
+  }
+}
+
+/**
+ * Which query language a request uses. OpenID4VP 1.0 defines DCQL and dropped
+ * Presentation Exchange; this server still offers both so a Wallet on either can
+ * be exercised.
+ */
+type QueryLanguage = 'dcql' | 'presentation-exchange'
+
+/** Reads the query language from a request body, defaulting to DCQL. */
+const readQueryLanguage = (value: unknown): QueryLanguage =>
+  value === 'presentation-exchange' ? 'presentation-exchange' : 'dcql'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
@@ -42,7 +84,11 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     }
     const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
     payload.vp_token =
-      vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
+      vpToken.length === 0
+        ? undefined
+        : vpToken.length === 1
+          ? decodeVpTokenField(vpToken[0])
+          : vpToken.map(decodeVpTokenField)
     const state = form.get('state')
     if (typeof state === 'string') {
       payload.state = state
@@ -64,6 +110,85 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     }
     return ClientIdentifier(client_id)
   }
+
+  /**
+   * The DCQL query of OpenID4VP 1.0, asking for the same Credential the
+   * Presentation Exchange definition below asks for. `credentialId` becomes the
+   * Credential Query id, so it is also the key of the `vp_token` object the
+   * Wallet returns (§8.1).
+   */
+  const buildTestDcqlQuery = (credentialId: string) =>
+    Dcql({
+      dcql_query: {
+        credentials: [
+          {
+            id: credentialId,
+            format: 'jwt_vc_json',
+            meta: { type_values: [['VerifiableCredential']] },
+          },
+        ],
+      },
+    })
+
+  /** The Presentation Exchange definition this server asks for. */
+  const buildTestQuery = (credentialId: string) =>
+    PresentationExchange({
+      presentation_definition: {
+        id: randomUUID(),
+        name: 'Test Name',
+        purpose: 'Test Purpose',
+        input_descriptors: [
+          {
+            id: credentialId,
+            format: {
+              jwt_vc_json: {
+                proof_type: ['ES256'],
+              },
+            },
+            constraints: {
+              fields: [
+                {
+                  path: ['$.vc.type'],
+                  filter: {
+                    type: 'array',
+                    contains: {
+                      const: 'VerifiableCredential',
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    })
+
+  /**
+   * The query a request carries. DCQL is what 1.0 defines; Presentation Exchange
+   * stays reachable so wallets that have not moved yet keep working.
+   */
+  const buildQuery = (credentialId: string, queryLanguage: QueryLanguage) =>
+    queryLanguage === 'dcql' ? buildTestDcqlQuery(credentialId) : buildTestQuery(credentialId)
+
+  /**
+   * Verifies the `vp_token` with whichever query language the request used. A
+   * DCQL response is checked against the query that produced it; a Presentation
+   * Exchange one keeps the earlier path.
+   */
+  const verifyResponse = async (
+    verifierId: ReturnType<typeof VerifierClientId>,
+    authorizationResponse: VerifierAuthorizationResponse,
+    dcqlQuery: DcqlQuery | undefined,
+    options: { expectedAud: ClientIdentifier }
+  ): Promise<unknown> =>
+    dcqlQuery
+      ? await verifierFlow.verifyDcqlPresentations(
+          verifierId,
+          authorizationResponse,
+          dcqlQuery,
+          options
+        )
+      : await verifierFlow.verifyPresentations(verifierId, authorizationResponse, options)
 
   verifyApp.post('/request', async (c) => {
     try {
@@ -98,36 +223,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
       const client_id = validateClientIdScheme(body.client_id as string)
 
-      const query = PresentationExchange({
-        presentation_definition: {
-          id: randomUUID(),
-          name: 'Test Name',
-          purpose: 'Test Purpose',
-          input_descriptors: [
-            {
-              id: credentialId,
-              format: {
-                jwt_vc_json: {
-                  proof_type: ['ES256'],
-                },
-              },
-              constraints: {
-                fields: [
-                  {
-                    path: ['$.vc.type'],
-                    filter: {
-                      type: 'array',
-                      contains: {
-                        const: 'VerifiableCredential',
-                      },
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      })
+      const queryLanguage = readQueryLanguage(body.queryLanguage)
+      const query = buildQuery(credentialId, queryLanguage)
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
@@ -143,6 +240,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const registered = vpAudTx.register(client_id, state)
       if (!registered.ok) {
         return c.json(registered.error, 400)
+      }
+      if (queryLanguage === 'dcql') {
+        vpAudTx.bindDcqlQuery(registered.transactionId, buildTestDcqlQuery(credentialId).dcql_query)
       }
       console.log('[verify] direct_post transaction_id:', registered.transactionId)
 
@@ -211,9 +311,12 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(audResolved.error, 400)
       }
       console.log('[verify] expectedAud:', audResolved.aud)
-      const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
-        expectedAud: audResolved.aud,
-      })
+      const vpPayload = await verifyResponse(
+        verifierId,
+        authorizationResponse,
+        audResolved.dcqlQuery,
+        { expectedAud: audResolved.aud }
+      )
       if (authorizationResponse.state != null && authorizationResponse.state !== '') {
         vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
       }

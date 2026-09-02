@@ -70,6 +70,12 @@ type PresentationRequest struct {
 	Nonce       string
 	ResponseURI string
 
+	// CredentialQueryID is the id of the DCQL Credential Query this presentation
+	// answers. OID4VP 1.0 Section 8.1 makes vp_token an object keyed by that id,
+	// so an empty value means the response is a Presentation Exchange one and
+	// carries a bare Presentation together with a presentation_submission.
+	CredentialQueryID string
+
 	// Origin is the Origin of the request, without the "origin:" prefix. It
 	// takes the place of ClientID and ResponseURI in the session_info structure
 	// when the presentation is invoked through the Digital Credentials API, and

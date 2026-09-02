@@ -6,6 +6,8 @@ sidebar_position: 21
 
 The following tables are organized based on [OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) and [OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html), and describe the current implementation scope of this repository.
 
+Where a feature follows [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) rather than draft 24 — the query language and the shape of the response, in particular — the row links to 1.0 and the note says so.
+
 `✅` means that the feature is implemented for the relevant role. `❌` means that it is not implemented or is not available end to end. Conditions for configuration-dependent features are described in the notes column.
 
 ## OpenID for Verifiable Credential Issuance 1.0
@@ -41,8 +43,9 @@ The following tables are organized based on [OpenID for Verifiable Credential Is
 | Specification section | Functional area | Specification role / feature | Verifier | Wallet | Notes |
 | --- | --- | --- | --- | --- | --- |
 | [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | Authorization Request | Since `v0.6.0`<br />✅ `request_uri`, URL-encoded parameters | ✅ `request`, `request_uri`, URL-encoded parameters |  |
-| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-6) | Credential Query | DCQL | ❌ | ❌ |  |
-| [5.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4) | Credential Query | Presentation Exchange | Since `v0.6.0`<br />✅ | ✅ | External spec: [DIF Presentation Exchange](https://identity.foundation/presentation-exchange/spec/v2.1.1) |
+| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6) | Credential Query | DCQL | ✅ | ✅ | OpenID4VP 1.0 §6, including `credential_sets`, `claim_sets`, `multiple` and `trusted_authorities`. The wallet answers one Credential Query per response; a query that needs several answered at once is refused rather than partially satisfied. |
+| [7](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7) | Credential Query | Claims Path Pointer | ✅ | ✅ | All three component forms: a key, a non-negative index, and `null` for every element of an array. |
+| [5.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4) | Credential Query | Presentation Exchange | Since `v0.6.0`<br />✅ | ✅ | Removed in OpenID4VP 1.0 in favour of DCQL, and kept here for wallets that have not moved yet. External spec: [DIF Presentation Exchange](https://identity.foundation/presentation-exchange/spec/v2.1.1) |
 | [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | Signed Authorization Request (JAR) | Since `v0.6.0`<br />✅ | ✅ | Uses a Request Object. External spec: [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) |
 | [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | Encrypted Authorization Request (JAR) | ❌ | ❌ | External spec: [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) |
 | [5.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.6) | Credential Query | Authorization Request using `scope` | ❌ | ❌ |  |
@@ -50,6 +53,7 @@ The following tables are organized based on [OpenID for Verifiable Credential Is
 | [5.11](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11) | Request URI | Request URI Method | Since `v0.6.0`<br />✅ GET | ✅ GET, POST |  |
 | [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ |  |
 | [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.1) | Authorization Response | Authorization Response | Since `v0.6.0`<br />✅ | ✅ |  |
+| [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1) | Authorization Response | `vp_token` as an object keyed by Credential Query id | ✅ | ✅ | The OpenID4VP 1.0 shape, returned for a DCQL request. `presentation_submission` is not sent with it, since 1.0 removed the parameter. A Presentation Exchange request still gets the earlier shape. |
 | [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ❌ |  |
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.3) | Authorization Response | Encrypted Authorization Response | ✅ | ✅ | Both `ECDH-ES` and JOSE HPKE. `encrypted_response_enc_values_supported` selects the content encryption algorithm for `ECDH-ES` (default `A128GCM`); it does not apply to HPKE. |
 | [8.3.1](https://openid.github.io/OpenID4VP/openid-4-verifiable-presentations-1_1-wg-draft.html#name-encryption-using-hpke) | Authorization Response | Encryption using HPKE | ✅ `HPKE-0`, `HPKE-1`, `HPKE-2`, `HPKE-3`, `HPKE-4`, `HPKE-7` | ✅ `HPKE-0`, `HPKE-1`, `HPKE-2`, `HPKE-3`, `HPKE-4`, `HPKE-7` | OpenID4VP 1.1 §8.3.1, Integrated Encryption only. The `session_info` structure binds the response to `client_id`/`nonce`/`response_uri` (or Origin for `dc_api.jwt`). `HPKE-5` and `HPKE-6` need DHKEM(X448): Node.js can perform it, the Go standard library cannot, so the suite is left out of both sides together. External spec: [draft-ietf-jose-hpke-encrypt](https://datatracker.ietf.org/doc/html/draft-ietf-jose-hpke-encrypt) |

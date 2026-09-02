@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/trustknots/vcknots/wallet/common/dcql"
 	commonX509 "github.com/trustknots/vcknots/wallet/common/x509"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/presenter/types"
@@ -93,6 +94,16 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		return "", fmt.Errorf("failed to marshal presentation_submission: %w", err)
 	}
 
+	// OID4VP 1.0 Section 8.1 makes vp_token an object keyed by the Credential
+	// Query id, and drops presentation_submission along with Presentation
+	// Exchange. A request without a Credential Query id is a Presentation
+	// Exchange one, which keeps the earlier shape.
+	usesDCQL := request != nil && request.CredentialQueryID != ""
+	vpTokenJSON, err := marshalVPToken(string(serializedPresentation), request)
+	if err != nil {
+		return "", err
+	}
+
 	var verifierMetadata *VerifierMetadata
 	if request != nil && request.ClientMetadata != nil {
 		if metadata, ok := request.ClientMetadata.(*VerifierMetadata); ok {
@@ -121,9 +132,12 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		}
 		formData.Set("response", responseJWE)
 	} else {
-		// Standard response: Send vp_token and presentation_submission directly
-		formData.Set("vp_token", string(serializedPresentation))
-		formData.Set("presentation_submission", string(presentationSubmissionJSON))
+		// Standard response: send vp_token, plus presentation_submission when
+		// the request used Presentation Exchange.
+		formData.Set("vp_token", vpTokenJSON)
+		if !usesDCQL {
+			formData.Set("presentation_submission", string(presentationSubmissionJSON))
+		}
 
 		// Add state if present in the original request
 		if request != nil && request.State != "" {
@@ -176,8 +190,13 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 // which the Verifier recomputes from the request parameters it issued.
 func (p *Oid4vpPresenter) createEncryptedResponse(vpToken string, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest, metadata *VerifierMetadata) (string, error) {
 	payload := map[string]interface{}{
-		"vp_token":                vpToken,
-		"presentation_submission": presentationSubmission,
+		"vp_token": vpTokenValue(vpToken, request),
+	}
+
+	// Presentation Exchange responses still carry the submission; a DCQL one
+	// does not, because OID4VP 1.0 removed the parameter.
+	if request == nil || request.CredentialQueryID == "" {
+		payload["presentation_submission"] = presentationSubmission
 	}
 
 	if request != nil && request.State != "" {
@@ -185,6 +204,33 @@ func (p *Oid4vpPresenter) createEncryptedResponse(vpToken string, presentationSu
 	}
 
 	return encryptAuthorizationResponse(payload, metadata, sessionInfoForRequest(request))
+}
+
+// vpTokenValue builds the vp_token as the response carries it: the object of
+// OID4VP 1.0 Section 8.1 for a DCQL request, and the bare Presentation the
+// Presentation Exchange flow used before that.
+func vpTokenValue(presentation string, request *types.PresentationRequest) interface{} {
+	if request == nil || request.CredentialQueryID == "" {
+		return presentation
+	}
+	return map[string]interface{}{
+		request.CredentialQueryID: []string{presentation},
+	}
+}
+
+// marshalVPToken renders vp_token for the form-encoded response. Section 8.1
+// calls it "a JSON-encoded object", so the DCQL form is serialized; the
+// Presentation Exchange form stays the Presentation itself.
+func marshalVPToken(presentation string, request *types.PresentationRequest) (string, error) {
+	value := vpTokenValue(presentation, request)
+	if token, ok := value.(string); ok {
+		return token, nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal vp_token: %w", err)
+	}
+	return string(encoded), nil
 }
 
 type requestBuilder struct {
@@ -211,8 +257,8 @@ func (b *requestBuilder) validate() error {
 		return b.errValidation
 	}
 
-	if b.req.PresentationDefinition == nil || b.req.PresentationDefinition.ID == "" {
-		return fmt.Errorf("presentation_definition is required")
+	if b.req.DCQLQuery == nil && (b.req.PresentationDefinition == nil || b.req.PresentationDefinition.ID == "") {
+		return fmt.Errorf("either dcql_query or presentation_definition is required")
 	}
 
 	if b.req.ResponseType == "" {
@@ -253,6 +299,15 @@ func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURI
 		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")
 	}
 	return nil
+}
+
+// reencodeParam returns a parameter as JSON, whether it arrived as a decoded
+// object (from a Request Object) or as a JSON string (from a query parameter).
+func reencodeParam(value any) ([]byte, error) {
+	if text, ok := value.(string); ok {
+		return []byte(text), nil
+	}
+	return json.Marshal(value)
 }
 
 // setParamsWithInterfaceMap sets the CredentialPresentationRequest fields from a map of any parameters,
@@ -334,7 +389,24 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	b.req.ResponseURI = responseURIFromParam
 
-	if pd := getParam("presentation_definition", true); pd != "" {
+	// OpenID4VP 1.0 asks for dcql_query; draft 24 asked for
+	// presentation_definition. Accept whichever the Verifier sent, and require
+	// one of them rather than presentation_definition specifically.
+	if raw, exists := params["dcql_query"]; exists && raw != nil {
+		encoded, err := reencodeParam(raw)
+		if err != nil {
+			b.errValidation = fmt.Errorf("invalid dcql_query: %w", err)
+			return
+		}
+		query, err := dcql.Parse(encoded)
+		if err != nil {
+			b.errValidation = err
+			return
+		}
+		b.req.DCQLQuery = query
+	}
+
+	if pd := getParam("presentation_definition", false); pd != "" {
 		// Handle presentation_definition as either string (JSON) or map
 		var presDef PresentationDefinition
 		if pdMap, ok := params["presentation_definition"].(map[string]any); ok {
@@ -374,6 +446,10 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 			return
 		}
 		b.req.ClientMetadata = &clientMeta
+	}
+
+	if b.req.DCQLQuery == nil && (b.req.PresentationDefinition == nil || b.req.PresentationDefinition.ID == "") {
+		missing = append(missing, "dcql_query or presentation_definition")
 	}
 
 	if len(missing) > 0 {
