@@ -46,6 +46,33 @@ const decodeVpTokenField = (value: string): string | Record<string, unknown> => 
 }
 
 /**
+ * The Client Identifier this verifier uses when a caller does not supply one.
+ *
+ * The Client Identifier Prefix of OpenID4VP 1.0 Section 5.9 has to agree with
+ * where the response is sent: `x509_san_dns` requires a certificate whose SAN
+ * carries the host, and a Wallet checks the response endpoint against it. The
+ * bundled sample certificate is issued for `localhost`, so it only works when
+ * this server is reached as localhost.
+ *
+ * Anywhere else — a deployment behind a real hostname — the prefix has to be
+ * `redirect_uri`, whose Client Identifier is the response endpoint itself and
+ * needs no certificate. Deriving the default from BASE_URL keeps the local
+ * setup on the certificate it was built for while letting a deployed instance
+ * work at all.
+ */
+const defaultClientId = (baseUrl: string): string => {
+  let hostname: string
+  try {
+    hostname = new URL(baseUrl).hostname
+  } catch {
+    return 'x509_san_dns:localhost'
+  }
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+    ? 'x509_san_dns:localhost'
+    : `redirect_uri:${baseUrl}/callback`
+}
+
+/**
  * Which query language a request uses. OpenID4VP 1.0 defines DCQL and dropped
  * Presentation Exchange; this server still offers both so a Wallet on either can
  * be exercised.
@@ -68,20 +95,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   const normalizeContentType = (value: string) => value.split(';')[0]?.trim().toLowerCase() ?? ''
   const parseFormPayload = (form: FormData): PayloadResult => {
     const payload: Partial<VerifierAuthorizationResponse> = {}
-    const presentationSubmission = form.get('presentation_submission')
-    if (typeof presentationSubmission === 'string' && presentationSubmission.trim()) {
-      try {
-        payload.presentation_submission = JSON.parse(presentationSubmission)
-      } catch {
-        return {
-          ok: false,
-          error: {
-            error: 'invalid_request',
-            error_description: 'presentation_submission must be JSON',
-          },
-        }
-      }
-    }
     const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
     payload.vp_token =
       vpToken.length === 0
@@ -99,7 +112,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   const canHandleClientIdScheme: VerifierClientIdScheme[] = ['redirect_uri', 'x509_san_dns']
   function validateClientIdScheme(client_id: string): ClientIdentifier {
     if (client_id == null || client_id === '') {
-      return 'x509_san_dns:localhost'
+      return ClientIdentifier(defaultClientId(baseUrl))
     }
     const m = client_id.match(/^([^:]+):(.+)$/)
     const prefix = m?.[1]
@@ -473,7 +486,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         client_id:
           typeof input.client_id === 'string' && input.client_id.trim() !== ''
             ? validateClientIdScheme(input.client_id)
-            : 'x509_san_dns:localhost',
+            : ClientIdentifier(defaultClientId(baseUrl)),
       }
 
       const verifierId = VerifierClientId(baseUrl)

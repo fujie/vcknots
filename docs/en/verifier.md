@@ -351,7 +351,7 @@ This is an endpoint where the Verifier receives the `vp_token` returned from the
 - **Endpoint**: `POST /verify/callback`
 - **Request body**
   - `Content-Type: application/x-www-form-urlencoded`
-  - Form fields carry OpenID4VP Authorization Response parameters such as `vp_token` and `presentation_submission` (same as a Wallet `direct_post` response).
+  - Form fields carry OpenID4VP Authorization Response parameters such as `vp_token` and `state` (same as a Wallet `direct_post` response). `presentation_submission` was removed in OpenID4VP 1.0 and is neither sent nor read.
   - Values are validated and parsed into `VerifierAuthorizationResponse`.
 - **Response**
   - `200 OK`: JSON body `{ "redirect_uri": "<baseUrl>/verified" }` (sample server; adjust to your app).
@@ -412,22 +412,6 @@ verifyApp.post('/verify/callback', async (c) => {
 curl --location 'http://localhost:8080/verify/callback' \
 --header 'Content-Type: application/x-www-form-urlencoded' \
 --data-urlencode 'vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJpc3MiOiJkaWQ6a2V5OnpEbmFlWWl3SE5lTVlhajIxV285alBDb3d0bkJyWThoZThVQ0s4WlpOMW1oaHg4UE0iLCJub25jZSI6IjY4ZTM5NzgwMjZiYzRiNzY5NzRhZGEwYjc5NzRiNTA5IiwidnAiOnsidHlwZSI6WyJWZXJpZmlhYmxlUHJlc2VudGF0aW9uIl0sInZlcmlmaWFibGVDcmVkZW50aWFsIjpbImV5SmhiR2NpT2lKRlV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUoyWXlJNmV5SkFZMjl1ZEdWNGRDSTZXeUpvZEhSd2N6b3ZMM2QzZHk1M015NXZjbWN2TWpBeE9DOWpjbVZrWlc1MGFXRnNjeTkyTVNKZExDSnBaQ0k2SW1oMGRIQnpPaTh2YldWa1lXeGliMjlyTFdSbGRpMWhjSEF0YVhOemRXVnlMbmRsWWk1aGNIQXZZM0psWkdWdWRHbGhiSE12UzJNME1GcG1XblIwVlVwV1pGRnJORk5JYm5ZaUxDSjBlWEJsSWpwYklsWmxjbWxtYVdGaWJHVkRjbVZrWlc1MGFXRnNJaXdpVFdWa1lXeENiMjlyVFdWa1lXd2lMQ0pOUkVJME1EUXlZek5sTWpWaU9UUTBOV0UwT0RobU1EbGhPRE00WVRNME9EVTROeUpkTENKcGMzTjFaWElpT2lKb2RIUndjem92TDIxbFpHRnNZbTl2YXkxa1pYWXRZWEJ3TFdsemMzVmxjaTUzWldJdVlYQndMMmx6YzNWbGNuTXZXVzlsZVRsSVJtcFVXVkI1WTIxa2NYZGFWVk1pTENKcGMzTjFZVzVqWlVSaGRHVWlPaUl5TURJMExURXlMVEkwVkRBeE9qTTRPalF6TGpZek1sb2lMQ0pqY21Wa1pXNTBhV0ZzVTNWaWFtVmpkQ0k2ZXlKcFpDSTZJbVJwWkRwclpYazZla1J1WVdWWmFYZElUbVZOV1dGcU1qRlhiemxxVUVOdmQzUnVRbkpaT0dobE9GVkRTemhhV2s0eGJXaG9lRGhRVFNJc0ltMWxaR0ZzYVhOMFQyWWlPbnNpYm1GdFpTSTZXM3NpZG1Gc2RXVWlPaUozYjI1a1pYSnNZVzVrSWl3aWJHOWpZV3hsSWpvaWFtRXRTbEFpZlYwc0ltUmxjMk55YVhCMGFXOXVJanBiZXlKMllXeDFaU0k2SW5kdmJtUmxjbXhoYm1RaUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhTd2liRzluYnlJNlczc2lkbUZzZFdVaU9uc2lkWEpwSWpvaWFIUjBjSE02THk5emRHOXlZV2RsTG1kdmIyZHNaV0Z3YVhNdVkyOXRMMjFsWkdGc1ltOXZheTFrWlhZdVlYQndjM0J2ZEM1amIyMHZhWE56ZFdWeUpUSkdkakVsTWtacGMzTjFaWEp6SlRKR1dXOWxlVGxJUm1wVVdWQjVZMjFrY1hkYVZWTWxNa1pqY21Wa1pXNTBhV0ZzY3lVeVJrSndkR3RYZFcxSFFVUXlNWHBUTm5WU2JUSmhMbkJ1WnlKOUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhYMTlmU3dpYVhOeklqb2lhSFIwY0hNNkx5OXRaV1JoYkdKdmIyc3RaR1YyTFdGd2NDMXBjM04xWlhJdWQyVmlMbUZ3Y0M5cGMzTjFaWEp6TDFsdlpYazVTRVpxVkZsUWVXTnRaSEYzV2xWVElpd2libUptSWpveE56TTFNREEwTXpJek5qTXlMQ0p6ZFdJaU9pSmthV1E2YTJWNU9ucEVibUZsV1dsM1NFNWxUVmxoYWpJeFYyODVhbEJEYjNkMGJrSnlXVGhvWlRoVlEwczRXbHBPTVcxb2FIZzRVRTBpZlEuX1dlOUEyalJnR3VrYzg5MnpXVFpxLUFTcnBQM3dZeHhXOFM4XzdwT3ZqQldZbTVQa1U5UlhoUWY2SmlzTGxPT1NhNVFaX3JBNGxmNEU3dDZubG9FaHciXSwiaG9sZGVyIjoiZGlkOmtleTp6RG5hZVlpd0hOZU1ZYWoyMVdvOWpQQ293dG5Cclk4aGU4VUNLOFpaTjFtaGh4OFBNIn19.Xs4kYmtNJEBLKOgof6pne9dkxDVim2MvCUwQVsFXzL5w01f0_nRSZVIYvPST8ofu9h0X80gIKxouJ-K5uBxMHg' \
---data-urlencode 'presentation_submission={
-		"id": "BptkWumGAD21zS6uRm2a",
-		"definition_id": "3cf37e60-e6e4-4d67-acff-3623586a7c4c",
-		"descriptor_map": [
-			{
-				"id": "BptkWumGAD21zS6uRm2a",
-				"format": "jwt_vp_json",
-				"path": "$",
-				"path_nested": {
-					"id": "BptkWumGAD21zS6uRm2a",
-					"format": "jwt_vc_json",
-					"path": "$.verifiableCredential[0]"
-				}
-			}
-		]
-	}' \
 --data-urlencode 'state=tEoHpMJo1896FnkXJxVu'
 ```
 
@@ -886,12 +870,11 @@ Options passed from your verifier application into VP / credential-format–spec
 **Error cases**:
 - `verifier_not_found`: The Verifier does not exist
 - `unsupported_vp_token`: Unsupported `vp_token` shape or format (for example, multiple VPs, or formats not wired to a provider)
-- `illegal_argument`: Missing/invalid arguments (for example, flow not implemented yet without `presentation_submission`, or VP provider rejects options)
+- `illegal_argument`: Missing/invalid arguments (for example, a VP provider rejects the options it was given)
 - `invalid_nonce`: The authorization request `nonce` is missing from the VP or does not match
 - `invalid_credential`: Invalid embedded VC (for example, `jwt_vp_json` path) or issuer/JWKS resolution failure
 - `invalid_vp_token`: VP structure or binding checks failed (for example, `aud` does not match `expectedAud`)
 - `invalid_sd_jwt` / `holder_binding_failed`: SD-JWT or Key Binding verification failures
-- `invalid_presentation_submission`: Invalid `presentation_submission`
 
 **Notes**:
 - Pass the **same** value as the **`client_id`** from the authorization request (including the scheme prefix, e.g. `redirect_uri:` or `x509_san_dns:`) as `expectedAud`. It **must match** the `aud` claim the Wallet sets on the VP or KB-JWT.

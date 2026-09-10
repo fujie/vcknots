@@ -535,7 +535,7 @@ Authorization response callback. Receives Verifiable Presentation sent from Wall
 
 **Request:** `application/json` or `application/x-www-form-urlencoded`
 
-- `vp_token` (required), `presentation_submission` (optional), `state` (optional)
+- `vp_token` (required), `state` (optional). `presentation_submission` was removed in OpenID4VP 1.0 and is not read.
 
 **Response:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
@@ -546,7 +546,7 @@ Authorization response callback. Receives Verifiable Presentation sent from Wall
 
 Callback using Key Binding JWT.
 
-**Request (application/x-www-form-urlencoded):** `vp_token`, `presentation_submission`, `state`
+**Request (application/x-www-form-urlencoded):** `vp_token`, `state`
 
 **Response:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`

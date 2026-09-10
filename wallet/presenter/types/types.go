@@ -11,13 +11,11 @@ var (
 	ErrUnsupportedProtocol  = errors.New("unsupported presentation protocol")
 	ErrInvalidEndpoint      = errors.New("invalid presentation endpoint")
 	ErrInvalidPresentation  = errors.New("invalid presentation data")
-	ErrInvalidSubmission    = errors.New("invalid presentation submission")
 	ErrPresentationFailed   = errors.New("presentation submission failed")
 	ErrNetworkFailed        = errors.New("network request failed")
 	ErrInvalidResponse      = errors.New("invalid response from verifier")
 	ErrTimeoutExpired       = errors.New("presentation request timeout expired")
 	ErrAuthenticationFailed = errors.New("authentication failed")
-	ErrInvalidDescriptorMap = errors.New("invalid descriptor map")
 	ErrPluginNotFound       = errors.New("presenter plugin not found")
 	ErrNilPlugin            = errors.New("presenter plugin cannot be nil")
 )
@@ -72,8 +70,8 @@ type PresentationRequest struct {
 
 	// CredentialQueryID is the id of the DCQL Credential Query this presentation
 	// answers. OID4VP 1.0 Section 8.1 makes vp_token an object keyed by that id,
-	// so an empty value means the response is a Presentation Exchange one and
-	// carries a bare Presentation together with a presentation_submission.
+	// so an empty value means the request used Presentation Exchange and the
+	// response carries the Presentation on its own.
 	CredentialQueryID string
 
 	// Origin is the Origin of the request, without the "origin:" prefix. It
@@ -84,7 +82,7 @@ type PresentationRequest struct {
 }
 
 type Presenter interface {
-	Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission, request *PresentationRequest) (string, error)
+	Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, request *PresentationRequest) (string, error)
 }
 
 type SupportedPresentationProtocol int
@@ -92,16 +90,3 @@ type SupportedPresentationProtocol int
 const (
 	Oid4vp SupportedPresentationProtocol = iota
 )
-
-type PresentationSubmission struct {
-	ID            string              `json:"id"`
-	DefinitionID  string              `json:"definition_id"`
-	DescriptorMap []DescriptorMapItem `json:"descriptor_map"`
-}
-
-type DescriptorMapItem struct {
-	ID         string             `json:"id"`
-	Format     string             `json:"format"`
-	Path       string             `json:"path"`
-	PathNested *DescriptorMapItem `json:"path_nested,omitempty"`
-}

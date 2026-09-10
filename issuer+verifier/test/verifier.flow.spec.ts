@@ -769,17 +769,6 @@ describe('VerifierFlow', () => {
       )
       const response = AuthorizationResponse({
         vp_token: vpToken,
-        presentation_submission: {
-          id: 'ps-id',
-          definition_id: 'pd-id',
-          descriptor_map: [
-            {
-              id: '2',
-              format: 'jwt_vp_json',
-              path: '$.vp',
-            },
-          ],
-        },
       })
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () =>

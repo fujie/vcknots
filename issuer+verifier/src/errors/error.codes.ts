@@ -51,7 +51,6 @@ export type ErrorCodes =
   | 'issuer_user_already_exists'
   | 'verifier_user_already_exists'
   | 'jwks_not_found'
-  | 'invalid_presentation_submission'
   | 'invalid_options'
   | 'invalid_sd_jwt'
   | 'invalid_configuration'

@@ -104,14 +104,10 @@ func TestOID4VPHPKEInteropVectors(t *testing.T) {
 				}
 			}
 
-			// Section 8.1 defines presentation_submission as an object, so the
-			// JSON payload has to carry it as one rather than as encoded text.
-			submission, ok := decoded["presentation_submission"].(map[string]any)
-			if !ok {
-				t.Fatalf("presentation_submission = %T, want a JSON object", decoded["presentation_submission"])
-			}
-			if submission["id"] != "submission-1" {
-				t.Errorf("presentation_submission.id = %v", submission["id"])
+			// OpenID4VP 1.0 removed presentation_submission, so an encrypted
+			// response must not carry it either.
+			if _, present := decoded["presentation_submission"]; present {
+				t.Error("presentation_submission was removed in OpenID4VP 1.0 and must not be sent")
 			}
 		})
 	}
@@ -143,7 +139,7 @@ func writeInteropVectors(t *testing.T) {
 			metadata := &VerifierMetadata{Jwks: jwks.Set{Keys: []jwks.Key{publicJWK}}}
 
 			request := session.presentationRequest(metadata)
-			response, err := presenter.createEncryptedResponse("a-vp-token", types.PresentationSubmission{ID: "submission-1", DefinitionID: "definition-1"}, request, metadata)
+			response, err := presenter.createEncryptedResponse("a-vp-token", request, metadata)
 			if err != nil {
 				t.Fatalf("failed to encrypt a %s vector: %v", alg, err)
 			}
@@ -153,8 +149,6 @@ func writeInteropVectors(t *testing.T) {
 				PrivateJWK: privateJWK,
 				Session:    session,
 				Response:   response,
-				// Only the scalar members go here; presentation_submission is a
-				// JSON object and is checked separately.
 				Payload: map[string]any{
 					"vp_token": "a-vp-token",
 					"state":    "state-1",

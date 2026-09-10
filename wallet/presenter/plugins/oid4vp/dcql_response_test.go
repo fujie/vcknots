@@ -15,8 +15,8 @@ import (
 
 // The shape of the Authorization Response changed with OpenID4VP 1.0: vp_token
 // became an object keyed by the Credential Query id, and presentation_submission
-// was removed along with Presentation Exchange. These tests pin both the DCQL
-// shape and the Presentation Exchange one this library still accepts.
+// was removed. These tests pin the DCQL shape and confirm the parameter is not
+// sent on either path.
 
 // captureResponse posts a presentation to a server that records the form body.
 func captureResponse(t *testing.T, request *types.PresentationRequest) url.Values {
@@ -45,8 +45,7 @@ func captureResponse(t *testing.T, request *types.PresentationRequest) url.Value
 	}
 
 	presenter := &Oid4vpPresenter{}
-	submission := types.PresentationSubmission{ID: "submission-1", DefinitionID: "definition-1"}
-	if _, err := presenter.Present(types.Oid4vp, *endpoint, []byte("a.presentation.jwt"), submission, request); err != nil {
+	if _, err := presenter.Present(types.Oid4vp, *endpoint, []byte("a.presentation.jwt"), request); err != nil {
 		t.Fatalf("Present() returned an error: %v", err)
 	}
 
@@ -80,14 +79,17 @@ func TestPresentSendsDCQLVPToken(t *testing.T) {
 	}
 }
 
-func TestPresentKeepsPresentationExchangeShape(t *testing.T) {
+// A request that carried no DCQL query still gets a bare Presentation as
+// vp_token, but never a presentation_submission: OpenID4VP 1.0 removed the
+// parameter, so this wallet does not send it on any path.
+func TestPresentWithoutDCQLSendsNoSubmission(t *testing.T) {
 	form := captureResponse(t, &types.PresentationRequest{State: "state-1"})
 
 	if form.Get("vp_token") != "a.presentation.jwt" {
 		t.Errorf("vp_token = %q, want the presentation itself", form.Get("vp_token"))
 	}
-	if form.Get("presentation_submission") == "" {
-		t.Error("a Presentation Exchange response must carry presentation_submission")
+	if _, present := form["presentation_submission"]; present {
+		t.Error("presentation_submission was removed in OpenID4VP 1.0 and must not be sent")
 	}
 }
 
@@ -107,8 +109,7 @@ func TestEncryptedResponseCarriesTheDCQLVPToken(t *testing.T) {
 	}
 
 	presenter := &Oid4vpPresenter{}
-	submission := types.PresentationSubmission{ID: "submission-1", DefinitionID: "definition-1"}
-	compact, err := presenter.createEncryptedResponse("a.presentation.jwt", submission, request, metadata)
+	compact, err := presenter.createEncryptedResponse("a.presentation.jwt", request, metadata)
 	if err != nil {
 		t.Fatalf("failed to create the encrypted response: %v", err)
 	}
@@ -131,6 +132,6 @@ func TestEncryptedResponseCarriesTheDCQLVPToken(t *testing.T) {
 		t.Errorf("vp_token = %v, want one presentation under the Credential Query id", response.VPToken)
 	}
 	if response.PresentationSubmission != nil {
-		t.Errorf("a DCQL response must not carry presentation_submission, got %s", response.PresentationSubmission)
+		t.Errorf("presentation_submission was removed in OpenID4VP 1.0, got %s", response.PresentationSubmission)
 	}
 }

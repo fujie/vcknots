@@ -352,7 +352,7 @@ Wallet から返送される `vp_token` を受け取り、Verifier 側で検証 
 - **エンドポイント**: `POST /verify/callback`
 - **リクエストボディ**
   - `Content-Type: application/x-www-form-urlencoded`
-  - フォームフィールドに `vp_token` や `presentation_submission` など、OpenID4VP の Authorization Response パラメータを載せます（Wallet の `direct_post` 応答と同形式）。
+  - フォームフィールドに `vp_token` や `state` など、OpenID4VP の Authorization Response パラメータを載せます（Wallet の `direct_post` 応答と同形式）。`presentation_submission` は OpenID4VP 1.0 で削除されたため、送信も読み取りも行いません。
   - 値は検証のうえ `VerifierAuthorizationResponse` にパースされます。
 - **レスポンス**
   - `200 OK`: JSON 本文 `{ "redirect_uri": "<baseUrl>/verified" }`（サンプルサーバの挙動。アプリに合わせて変更してください）。
@@ -413,22 +413,6 @@ verifyApp.post('/verify/callback', async (c) => {
 curl --location 'http://localhost:8080/verify/callback' \
 --header 'Content-Type: application/x-www-form-urlencoded' \
 --data-urlencode 'vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJpc3MiOiJkaWQ6a2V5OnpEbmFlWWl3SE5lTVlhajIxV285alBDb3d0bkJyWThoZThVQ0s4WlpOMW1oaHg4UE0iLCJub25jZSI6Ijg5NDAwOWRkOGJmMDQxMzBhMWVlYmFkZmM1YTE3MmRkIiwiYXVkIjoicmVkaXJlY3RfdXJpOmh0dHBzOi8vOXBuenBiYmctODA4MC5hc3NlLmRldnR1bm5lbHMubXMvY2FsbGJhY2siLCJ2cCI6eyJ0eXBlIjpbIlZlcmlmaWFibGVQcmVzZW50YXRpb24iXSwidmVyaWZpYWJsZUNyZWRlbnRpYWwiOlsiZXlKaGJHY2lPaUpGVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SjJZeUk2ZXlKQVkyOXVkR1Y0ZENJNld5Sm9kSFJ3Y3pvdkwzZDNkeTUzTXk1dmNtY3ZNakF4T0M5amNtVmtaVzUwYVdGc2N5OTJNU0pkTENKcFpDSTZJbWgwZEhCek9pOHZPWEJ1ZW5CaVltY3RPREE0TUM1aGMzTmxMbVJsZG5SMWJtNWxiSE11YlhNdmRtTXZPVEV4T0dOa09UVTNaREF6TkRneFlqazNZakF4WmpNME5qTTVPRFk0TjJZaUxDSjBlWEJsSWpwYklsWmxjbWxtYVdGaWJHVkRjbVZrWlc1MGFXRnNJaXdpVlc1cGRtVnljMmwwZVVSbFozSmxaVU55WldSbGJuUnBZV3dpWFN3aWFYTnpkV1Z5SWpvaWFIUjBjSE02THk4NWNHNTZjR0ppWnkwNE1EZ3dMbUZ6YzJVdVpHVjJkSFZ1Ym1Wc2N5NXRjeUlzSW1semMzVmhibU5sUkdGMFpTSTZJakl3TWpZdE1ETXRNalpVTVRBNk1USTZNVFF1TVRZNVdpSXNJbU55WldSbGJuUnBZV3hUZFdKcVpXTjBJanA3SW1sa0lqb2laR2xrT210bGVUcDZSRzVoWlZscGQwaE9aVTFaWVdveU1WZHZPV3BRUTI5M2RHNUNjbGs0YUdVNFZVTkxPRnBhVGpGdGFHaDRPRkJOSWl3aVoybDJaVzVmYm1GdFpTSTZJblJsYzNRaUxDSm1ZVzFwYkhsZmJtRnRaU0k2SW5SaGNtOGlMQ0prWldkeVpXVWlPaUkxSWl3aVozQmhJam9pZEdWemRDSjlmU3dpYVhOeklqb2lhSFIwY0hNNkx5ODVjRzU2Y0dKaVp5MDRNRGd3TG1GemMyVXVaR1YyZEhWdWJtVnNjeTV0Y3lJc0luTjFZaUk2SW1ScFpEcHJaWGs2ZWtSdVlXVlphWGRJVG1WTldXRnFNakZYYnpscVVFTnZkM1J1UW5KWk9HaGxPRlZEU3poYVdrNHhiV2hvZURoUVRTSjkucUU5aVlxYngzVHNWNjhGQVR2Rl84b083T0VsallPeWR2eGJOQnlyazJpY1Q2c0l2WE5QS0NiYTlwcUxvOWVPNjNEdy1PdDNVZHBPMm10Q3lXOGM1a1EiXSwiaG9sZGVyIjoiZGlkOmtleTp6RG5hZVlpd0hOZU1ZYWoyMVdvOWpQQ293dG5Cclk4aGU4VUNLOFpaTjFtaGh4OFBNIn19.hzXVRIennFIu1CiYXCQB_W-w4xL-Un9PChp5c31ZPI2CbmZaCJsjkuvwEm6c6_5F1nY7UkAF-EsVqewbsdne6Q' \
---data-urlencode 'presentation_submission={
-		"id": "BptkWumGAD21zS6uRm2a",
-		"definition_id": "3cf37e60-e6e4-4d67-acff-3623586a7c4c",
-		"descriptor_map": [
-			{
-				"id": "BptkWumGAD21zS6uRm2a",
-				"format": "jwt_vp_json",
-				"path": "$",
-				"path_nested": {
-					"id": "BptkWumGAD21zS6uRm2a",
-					"format": "jwt_vc_json",
-					"path": "$.verifiableCredential[0]"
-				}
-			}
-		]
-	}' \
 --data-urlencode 'state=example-state'
 ```
 
@@ -892,12 +876,11 @@ Verifier アプリから VP／クレデンシャル形式ごとの検査に渡�
 **エラーケース**:
 - `verifier_not_found`: Verifierが存在しない
 - `unsupported_vp_token`: `vp_token` の形や形式が未対応（複数 VP、オブジェクト形式の `vp_token` など）
-- `illegal_argument`: 引数不備（例: `presentation_submission` なしの経路は未実装、プロバイダがオプションを拒否）
+- `illegal_argument`: 引数不備（例: プロバイダが渡されたオプションを拒否）
 - `invalid_nonce`: 認可リクエストの `nonce` が VP に無い、または一致しない
 - `invalid_credential`: 内包 VC が無効（`jwt_vp_json` 経路）、発行者メタデータ／JWKS 取得失敗など
 - `invalid_vp_token`: VP 構造または `aud` が `expectedAud` と一致しないなど
 - `invalid_sd_jwt` / `holder_binding_failed`: SD-JWT または Key Binding の検証失敗
-- `invalid_presentation_submission`: 無効な `presentation_submission`
 
 **注意事項**:
 - 認可リクエストで使った **`client_id` と同じ文字列**（`redirect_uri:` や `x509_san_dns:` などスキーム接頭辞込み）を `expectedAud` に渡してください。Wallet が設定する `aud` と一致させる必要があります。

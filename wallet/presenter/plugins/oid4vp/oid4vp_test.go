@@ -25,13 +25,6 @@ import (
 
 func TestOid4vpPresenter_Present(t *testing.T) {
 	testPresentation := []byte("a.valid.jwt")
-	testSubmission := types.PresentationSubmission{
-		ID:           "12345",
-		DefinitionID: "example_jwt_vc",
-		DescriptorMap: []types.DescriptorMapItem{
-			{ID: "vp_token_jwt", Format: "jwt_vp_json", Path: "$"},
-		},
-	}
 
 	tests := []struct {
 		name                   string
@@ -92,7 +85,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 				endpoint = *presenterURL
 			}
 			p := &Oid4vpPresenter{}
-			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
+			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, nil)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Oid4vpPresenter.Present() error = %v, wantErr %v", err, tt.wantErr)
@@ -114,7 +107,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
-		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "https://example.com/callback", redirectURI)
 	})
@@ -134,7 +127,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
-		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, nil)
 		require.NoError(t, err)
 		assert.Empty(t, redirectURI)
 	})
@@ -156,7 +149,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		hijackURL, _ := url.Parse(hijackServer.URL() + "/present")
 
 		p := &Oid4vpPresenter{}
-		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
+		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, nil)
 
 		if err == nil {
 			t.Error("Expected error for hijacked connection, got nil")

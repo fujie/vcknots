@@ -534,7 +534,7 @@ Request Object を JAR 形式で作成します。
 
 **リクエスト:** `application/json` または `application/x-www-form-urlencoded`
 
-- `vp_token` (必須), `presentation_submission` (オプション), `state` (オプション)
+- `vp_token` (必須), `state` (オプション)。`presentation_submission` は OpenID4VP 1.0 で削除されたため読み取りません。
 
 **レスポンス:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
@@ -545,7 +545,7 @@ Request Object を JAR 形式で作成します。
 
 Key Binding JWT を使用したコールバック。
 
-**リクエスト (application/x-www-form-urlencoded):** `vp_token`, `presentation_submission`, `state`
+**リクエスト (application/x-www-form-urlencoded):** `vp_token`, `state`
 
 **レスポンス:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`

@@ -100,7 +100,7 @@ func TestEncryptAuthorizationResponseWithHPKE(t *testing.T) {
 			metadata := &VerifierMetadata{Jwks: jwks.Set{Keys: []jwks.Key{publicJWK}}}
 
 			presenter := &Oid4vpPresenter{}
-			compact, err := presenter.createEncryptedResponse("vp-token", types.PresentationSubmission{ID: "submission-1", DefinitionID: "definition-1"}, request, metadata)
+			compact, err := presenter.createEncryptedResponse("vp-token", request, metadata)
 			if err != nil {
 				t.Fatalf("failed to create the encrypted response: %v", err)
 			}
@@ -149,7 +149,7 @@ func TestEncryptedResponseIsBoundToTheSession(t *testing.T) {
 	}
 
 	presenter := &Oid4vpPresenter{}
-	compact, err := presenter.createEncryptedResponse("vp-token", types.PresentationSubmission{}, request, metadata)
+	compact, err := presenter.createEncryptedResponse("vp-token", request, metadata)
 	if err != nil {
 		t.Fatalf("failed to create the encrypted response: %v", err)
 	}

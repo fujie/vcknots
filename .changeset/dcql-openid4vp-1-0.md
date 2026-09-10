@@ -11,6 +11,6 @@ OpenID4VP 1.0 replaced Presentation Exchange with the Digital Credentials Query 
 - `verifierFlow.verifyDcqlPresentations()` verifies a `vp_token` against the query that produced it: the keys have to name Credential Queries, `multiple` is respected, the required Credential Set Queries have to be answered, and each Presentation is verified for its format and then checked to actually carry the claims that were asked for.
 - `vp_token` is accepted in the object form of §8.1, keyed by Credential Query id with non-empty arrays of Presentations. `isDcqlVpToken()` tells a 1.0 response from a Presentation Exchange one.
 
-Presentation Exchange keeps working. `verifierFlow.verifyPresentations()` is unchanged, and a request may still carry a `presentation_definition`, so wallets that have not moved to 1.0 are unaffected.
+Presentation Exchange keeps working: a request may still carry a `presentation_definition`, and `verifierFlow.verifyPresentations()` still verifies the Presentation it returns.
 
 `client_id_scheme` is marked deprecated: 1.0 carries the Client Identifier Prefix inside `client_id`. It is still emitted and accepted for draft 24 wallets, but behaviour is driven by the prefix.

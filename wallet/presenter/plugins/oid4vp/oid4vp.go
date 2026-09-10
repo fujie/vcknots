@@ -84,21 +84,14 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 }
 
 // Present sends the presentation to the verifier
-func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest) (string, error) {
+func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, request *types.PresentationRequest) (string, error) {
 	if protocol != types.Oid4vp {
 		return "", fmt.Errorf("plugin type mismatch")
 	}
 
-	presentationSubmissionJSON, err := json.Marshal(presentationSubmission)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal presentation_submission: %w", err)
-	}
-
 	// OID4VP 1.0 Section 8.1 makes vp_token an object keyed by the Credential
-	// Query id, and drops presentation_submission along with Presentation
-	// Exchange. A request without a Credential Query id is a Presentation
-	// Exchange one, which keeps the earlier shape.
-	usesDCQL := request != nil && request.CredentialQueryID != ""
+	// Query id. A request without one used Presentation Exchange, whose response
+	// carries the Presentation on its own.
 	vpTokenJSON, err := marshalVPToken(string(serializedPresentation), request)
 	if err != nil {
 		return "", err
@@ -124,20 +117,14 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 
 	if encryptResponse {
 		// The encrypted response travels as a single "response" parameter
-		// holding an unsigned, encrypted JWT. The submission goes in as the
-		// structure it is, not as the JSON text the form encoding needs.
-		responseJWE, err := p.createEncryptedResponse(string(serializedPresentation), presentationSubmission, request, verifierMetadata)
+		// holding an unsigned, encrypted JWT.
+		responseJWE, err := p.createEncryptedResponse(string(serializedPresentation), request, verifierMetadata)
 		if err != nil {
 			return "", fmt.Errorf("failed to create the encrypted authorization response: %w", err)
 		}
 		formData.Set("response", responseJWE)
 	} else {
-		// Standard response: send vp_token, plus presentation_submission when
-		// the request used Presentation Exchange.
 		formData.Set("vp_token", vpTokenJSON)
-		if !usesDCQL {
-			formData.Set("presentation_submission", string(presentationSubmissionJSON))
-		}
 
 		// Add state if present in the original request
 		if request != nil && request.State != "" {
@@ -180,23 +167,12 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 // Section 8.3: an unsigned, encrypted JWT whose payload carries the
 // Authorization Response parameters as top-level members.
 //
-// Because the payload is JSON rather than a form body, presentation_submission
-// belongs in it as a JSON object. Carrying it as a string, the way the
-// form-encoded response has to, would leave a Verifier reading a string where
-// Section 8.1 defines an object.
-//
 // When the Verifier's encryption key names a JOSE HPKE algorithm the response is
 // bound to the session through the session_info structure of Section 8.3.1,
 // which the Verifier recomputes from the request parameters it issued.
-func (p *Oid4vpPresenter) createEncryptedResponse(vpToken string, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest, metadata *VerifierMetadata) (string, error) {
+func (p *Oid4vpPresenter) createEncryptedResponse(vpToken string, request *types.PresentationRequest, metadata *VerifierMetadata) (string, error) {
 	payload := map[string]interface{}{
 		"vp_token": vpTokenValue(vpToken, request),
-	}
-
-	// Presentation Exchange responses still carry the submission; a DCQL one
-	// does not, because OID4VP 1.0 removed the parameter.
-	if request == nil || request.CredentialQueryID == "" {
-		payload["presentation_submission"] = presentationSubmission
 	}
 
 	if request != nil && request.State != "" {

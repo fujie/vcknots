@@ -230,6 +230,18 @@ const hasResponseEncryptionKey = (metadata: VerifierMetadata): boolean =>
       isSupportedResponseEncryptionAlgorithm(key.alg)
   )
 
+/**
+ * The Credential Format of a Presentation, read from the Presentation itself.
+ *
+ * Presentation Exchange named the format in `presentation_submission`, which
+ * OpenID4VP 1.0 removed. A DCQL response takes the format from the Credential
+ * Query it answers; a response to a `presentation_definition` has neither, so
+ * the format is recognised from the encoding: an SD-JWT VC is the issuer-signed
+ * JWT followed by tilde-separated disclosures, and nothing else uses a tilde.
+ */
+const presentationFormatOf = (presentation: string): 'dc+sd-jwt' | 'jwt_vp_json' =>
+  presentation.includes('~') ? 'dc+sd-jwt' : 'jwt_vp_json'
+
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
   typeof query === 'object' &&
   query !== null &&
@@ -687,12 +699,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         })
       }
 
-      // TODO: Implement
-      if (!response.presentation_submission) {
-        throw err('illegal_argument', {
-          message: 'DQCL is not supported yet',
-        })
-      }
       if (Array.isArray(response.vp_token) && response.vp_token.length !== 1) {
         throw err('unsupported_vp_token', {
           message: 'Submitting multiple verifiable presentations are not supported yet',
@@ -704,7 +710,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         })
       }
 
-      const format = response.presentation_submission.descriptor_map[0].format
+      const format = presentationFormatOf(response.vp_token)
       const verifyOptions: VerifyVerifiablePresentationVerifyOptions =
         format === 'dc+sd-jwt'
           ? {
