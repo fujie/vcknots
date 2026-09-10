@@ -348,3 +348,85 @@ func TestValidate(t *testing.T) {
 		}
 	})
 }
+
+// Appendix B.1.1: type_values holds fully expanded types, obtained by applying
+// the credential's @context. A term no context defines stays as it is and is
+// already its own fully expanded type.
+func TestExpandCredentialType(t *testing.T) {
+	standard := []string{"https://www.w3.org/2018/credentials/v1"}
+
+	tests := []struct {
+		name           string
+		credentialType string
+		contexts       []string
+		want           string
+	}{
+		{
+			name:           "a term the standard context defines",
+			credentialType: "VerifiableCredential",
+			contexts:       standard,
+			want:           "https://www.w3.org/2018/credentials#VerifiableCredential",
+		},
+		{
+			name:           "a term no context defines stays as it is",
+			credentialType: "UniversityDegreeCredential",
+			contexts:       standard,
+			want:           "UniversityDegreeCredential",
+		},
+		{
+			name:           "a term the examples context defines",
+			credentialType: "UniversityDegreeCredential",
+			contexts:       append(standard, "https://www.w3.org/2018/credentials/examples/v1"),
+			want:           "https://example.org/examples#UniversityDegreeCredential",
+		},
+		{
+			name:           "an absolute IRI is left alone",
+			credentialType: "https://example.com/vocab#Custom",
+			contexts:       standard,
+			want:           "https://example.com/vocab#Custom",
+		},
+		{
+			name:           "no context at all",
+			credentialType: "VerifiableCredential",
+			contexts:       nil,
+			want:           "VerifiableCredential",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := dcql.ExpandCredentialType(test.credentialType, test.contexts); got != test.want {
+				t.Errorf("dcql.ExpandCredentialType() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// The Credential this wallet is issued in the sample flow: the standard context
+// only, so VerifiableCredential expands and UniversityDegreeCredential does not.
+func TestMatchesMetaUsesExpandedTypes(t *testing.T) {
+	credential := map[string]any{
+		"vc": map[string]any{
+			"@context": []any{"https://www.w3.org/2018/credentials/v1"},
+			"type":     []any{"VerifiableCredential", "UniversityDegreeCredential"},
+		},
+	}
+
+	expanded := dcql.CredentialQuery{Meta: map[string]any{
+		"type_values": []any{[]any{
+			"https://www.w3.org/2018/credentials#VerifiableCredential",
+			"UniversityDegreeCredential",
+		}},
+	}}
+	if err := expanded.MatchesMeta(credential); err != nil {
+		t.Errorf("the expanded types should match: %v", err)
+	}
+
+	// The unexpanded term is not what the credential's types expand to.
+	unexpanded := dcql.CredentialQuery{Meta: map[string]any{
+		"type_values": []any{[]any{"VerifiableCredential"}},
+	}}
+	if err := unexpanded.MatchesMeta(credential); err == nil {
+		t.Error("an unexpanded VerifiableCredential must not match an expanded type")
+	}
+}

@@ -18,12 +18,13 @@ import { VerifierMetadata } from './verifier-metadata.types'
 import { RequestObjectId } from './request-object-id.types'
 import { Certificate } from './signature-key.types'
 import { Jwk } from './jwk.type'
-import { exportJWK, importSPKI } from 'jose'
+import { calculateJwkThumbprint, exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { VpTokenPayload } from './presentation.types'
 import { supportedHpkeAlgorithms } from './jose-hpke'
 import { matchesCredentialQuery, validateVpTokenAgainstQuery } from './dcql'
 import { DcqlQuery } from './dcql-query.types'
+import { toClientMetadata } from './verifier-metadata.types'
 import {
   isSupportedResponseEncryptionAlgorithm,
   ResponseEncryptionSession,
@@ -242,6 +243,24 @@ const hasResponseEncryptionKey = (metadata: VerifierMetadata): boolean =>
 const presentationFormatOf = (presentation: string): 'dc+sd-jwt' | 'jwt_vp_json' =>
   presentation.includes('~') ? 'dc+sd-jwt' : 'jwt_vp_json'
 
+/**
+ * Gives a JWK a `kid` when it has none.
+ *
+ * OpenID4VP 1.0 Section 5.1 requires every JWK in `client_metadata.jwks` to
+ * carry a `kid` that uniquely identifies it within the request, and Section 8.3
+ * has the Wallet echo that `kid` in the JWE header so the Verifier knows which
+ * key a response was encrypted to. The RFC 7638 thumbprint is unique per key by
+ * construction, so it is used when the caller supplied no identifier.
+ */
+const withKeyId = async <T extends object>(jwk: T): Promise<T & { kid: string }> => {
+  const existing = (jwk as { kid?: unknown }).kid
+  if (typeof existing === 'string' && existing !== '') {
+    return jwk as T & { kid: string }
+  }
+  const kid = await calculateJwkThumbprint(jwk as Parameters<typeof calculateJwkThumbprint>[0])
+  return { ...jwk, kid }
+}
+
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
   typeof query === 'object' &&
   query !== null &&
@@ -301,7 +320,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           })
         }
         const jwk = await exportJWK(publicKey)
-        verifierMetadata.jwks = { keys: [{ ...jwk, alg: keyAlg }] }
+        verifierMetadata.jwks = { keys: [await withKeyId({ ...jwk, alg: keyAlg })] }
         verifierMetadata.authorization_signed_response_alg = keyAlg
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided key pair (not support x509)
@@ -311,7 +330,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           })
         }
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
-          verifierMetadata.jwks = { keys: [options.publicKey] }
+          verifierMetadata.jwks = { keys: [await withKeyId(options.publicKey)] }
           verifierMetadata.authorization_signed_response_alg = keyAlg
         } else if (options.format === 'jwk') {
           throw err('invalid_options', {
@@ -320,7 +339,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
           const key = await importSPKI(options.publicKey, keyAlg)
           const jwk = await exportJWK(key)
-          verifierMetadata.jwks = { keys: [{ ...jwk }] }
+          verifierMetadata.jwks = { keys: [await withKeyId({ ...jwk, alg: keyAlg })] }
           verifierMetadata.authorization_signed_response_alg = keyAlg
         } else {
           throw err('invalid_options', {
@@ -355,7 +374,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         const publicKey = await certificate$.getPublicKey(certificate)
         const key = await importSPKI(publicKey, keyAlg)
         const jwk = await exportJWK(key)
-        verifierMetadata.jwks = { keys: [{ ...jwk }] }
+        verifierMetadata.jwks = { keys: [await withKeyId({ ...jwk, alg: keyAlg })] }
         verifierMetadata.authorization_signed_response_alg = keyAlg
         certificatesToSave = certificates
         keyPairsToSave = {
@@ -408,14 +427,16 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       isRequestUri,
       options
     ) {
-      const client_id_scheme = client_id.split(':')[0]
-      const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
+      // OpenID4VP 1.0 Section 5.9.1 carries the Client Identifier Prefix inside
+      // client_id, separated by a colon. There is no client_id_scheme parameter.
+      const clientIdPrefix = client_id.split(':')[0]
+      const authzRequestJAR = selectProvider(authzRequestJAR$, clientIdPrefix)
       if (!authzRequestJAR) {
         throw err('unsupported_client_id_scheme', {
-          message: 'client_id_scheme is not supported.',
+          message: 'The Client Identifier Prefix is not supported.',
         })
       }
-      if (client_id_scheme === 'x509_san_dns' || client_id_scheme === 'x509_san_uri') {
+      if (clientIdPrefix === 'x509_san_dns' || clientIdPrefix === 'x509_san_uri') {
         const certificate = await certificateStore$.fetch(verifierId)
         if (!certificate) {
           throw err('certificate_not_found', {
@@ -448,7 +469,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const credentialIds: string[] = []
       let isDcSDJwtRequested = false
       // Validate: Metadata supports format
-      const vpFormats = Object.keys(metadata.vp_formats)
+      const vpFormats = Object.keys(metadata.vp_formats_supported)
       if (isPresentationExchange(parsedQuery)) {
         if (parsedQuery.presentation_definition) {
           const input_descriptors = parsedQuery.presentation_definition.input_descriptors
@@ -521,7 +542,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           response_uri: responseUri,
           iss: client_id,
           aud: 'https://self-issued.me/v2',
-          client_metadata: metadata,
+          client_metadata: toClientMetadata(metadata),
           response_mode: response_mode || 'direct_post',
           ...parsedQuery,
           ...(transaction_data.length > 0 ? { transaction_data } : {}),
@@ -543,8 +564,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         response_uri: responseUri,
         response_type: response_type,
         response_mode: response_mode || 'direct_post',
-        client_id_scheme: client_id_scheme,
-        client_metadata: metadata,
+        client_metadata: toClientMetadata(metadata),
         nonce: nonce.nonce,
         ...parsedQuery,
         ...(transaction_data.length > 0 ? { transaction_data } : {}),
@@ -565,8 +585,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       await nonceStore$.save(nonce)
 
       const clientId = requestObject.client_id
-      const client_id_scheme = clientId.split(':')[0]
-      const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
+      const clientIdPrefix = clientId.split(':')[0]
+      const authzRequestJAR = selectProvider(authzRequestJAR$, clientIdPrefix)
       if (!authzRequestJAR) {
         throw raise('provider_not_found', {
           message: 'Authorization request JAR provider is not found.',

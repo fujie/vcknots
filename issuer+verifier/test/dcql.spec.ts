@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { expandCredentialType } from '../src/credential-type-iri'
 import {
   matchesCredentialQuery,
   resolveClaimsPath,
@@ -355,5 +356,77 @@ describe('DcqlQuery validation', () => {
     })
     assert.equal((query.credentials[0] as Record<string, unknown>).future_property, 'kept')
     assert.equal((query as Record<string, unknown>).future_top_level, 1)
+  })
+})
+
+describe('type_values expansion (Appendix B.1.1)', () => {
+  const standard = ['https://www.w3.org/2018/credentials/v1']
+
+  it('expands a term the standard context defines', () => {
+    assert.equal(
+      expandCredentialType('VerifiableCredential', standard),
+      'https://www.w3.org/2018/credentials#VerifiableCredential'
+    )
+  })
+
+  it('leaves a term no context defines unchanged', () => {
+    // The specification: such a term "remains a relative IRI after JSON-LD
+    // processing ... and is considered to be the fully expanded type".
+    assert.equal(
+      expandCredentialType('UniversityDegreeCredential', standard),
+      'UniversityDegreeCredential'
+    )
+  })
+
+  it('expands a term the examples context defines', () => {
+    assert.equal(
+      expandCredentialType('UniversityDegreeCredential', [
+        ...standard,
+        'https://www.w3.org/2018/credentials/examples/v1',
+      ]),
+      'https://example.org/examples#UniversityDegreeCredential'
+    )
+  })
+
+  it('leaves an absolute IRI alone', () => {
+    assert.equal(
+      expandCredentialType('https://example.com/vocab#Custom', standard),
+      'https://example.com/vocab#Custom'
+    )
+  })
+
+  it('matches a credential on its expanded types', () => {
+    const credential = {
+      vc: {
+        '@context': ['https://www.w3.org/2018/credentials/v1'],
+        type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+      },
+    }
+    const query = (typeValues: unknown) =>
+      DcqlQuery({
+        credentials: [{ id: 'c', format: 'jwt_vc_json', meta: { type_values: typeValues } }],
+      }).credentials[0]
+
+    assert.equal(
+      matchesCredentialQuery(
+        query([
+          [
+            'https://www.w3.org/2018/credentials#VerifiableCredential',
+            'UniversityDegreeCredential',
+          ],
+        ]),
+        { format: 'jwt_vc_json', claims: credential }
+      ).matched,
+      true
+    )
+
+    // The unexpanded term is not what the credential's types expand to.
+    assert.equal(
+      matchesCredentialQuery(query([['VerifiableCredential']]), {
+        format: 'jwt_vc_json',
+        claims: credential,
+      }).matched,
+      false
+    )
   })
 })

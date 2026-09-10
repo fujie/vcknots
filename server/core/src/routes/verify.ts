@@ -135,9 +135,25 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       dcql_query: {
         credentials: [
           {
+            // `id` only names this Credential Query — it is the key the
+            // vp_token comes back under (§6.1), and constrains nothing. What
+            // the Verifier actually asks for is in `meta`.
             id: credentialId,
             format: 'jwt_vc_json',
-            meta: { type_values: [['VerifiableCredential']] },
+            meta: {
+              // Appendix B.1.1: type_values holds fully expanded types (IRIs),
+              // obtained by applying the credential's @context. The sample
+              // credential declares only https://www.w3.org/2018/credentials/v1,
+              // which defines VerifiableCredential and expands it; it does not
+              // define UniversityDegreeCredential, so that term stays as it is
+              // and is already its own fully expanded type.
+              type_values: [
+                [
+                  'https://www.w3.org/2018/credentials#VerifiableCredential',
+                  'UniversityDegreeCredential',
+                ],
+              ],
+            },
           },
         ],
       },

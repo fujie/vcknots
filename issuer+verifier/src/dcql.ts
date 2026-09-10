@@ -1,3 +1,4 @@
+import { credentialContexts, expandedCredentialTypes } from './credential-type-iri'
 import {
   allowsMultiple,
   DcqlClaimsPathPointer,
@@ -170,26 +171,27 @@ export const matchesMeta = (
     }
   }
 
-  // W3C VC: one inner array of type_values must be fully present in the
-  // credential's types (Appendix B.1.1).
+  // W3C VC: type_values holds fully expanded types (IRIs), obtained by applying
+  // the credential's @context to its type entries. One inner array must be
+  // present in full, regardless of order or additional types (Appendix B.1.1).
   const typeValues = meta.type_values
   if (Array.isArray(typeValues)) {
+    // A JWT-encoded credential nests the credential under `vc`; the @context
+    // sits alongside the types, so both are read from the same object.
     const vc = isPlainObject(credential) ? credential.vc : undefined
-    const rawTypes = isPlainObject(vc)
-      ? vc.type
-      : isPlainObject(credential)
-        ? credential.type
-        : undefined
-    const types = Array.isArray(rawTypes)
+    const source = isPlainObject(vc) ? vc : isPlainObject(credential) ? credential : undefined
+    const rawTypes = source?.type
+    const declared = Array.isArray(rawTypes)
       ? rawTypes.filter((t): t is string => typeof t === 'string')
       : []
+    const types = expandedCredentialTypes(declared, credentialContexts(source))
     const satisfied = typeValues.some(
       (option) => Array.isArray(option) && option.every((type) => types.includes(type as string))
     )
     if (!satisfied) {
       return {
         matched: false,
-        reason: 'the credential types match none of the type_values options',
+        reason: `the expanded credential types ${JSON.stringify(types)} match none of the type_values options`,
       }
     }
   }

@@ -143,12 +143,37 @@ type VerifierMetadata struct {
 	AuthorizationEncryptedResponseAlg string   `json:"authorization_encrypted_response_alg,omitempty"`
 	AuthorizationEncryptedResponseEnc string   `json:"authorization_encrypted_response_enc,omitempty"`
 
+	// VPFormatsSupported lists the Credential Formats the Verifier accepts,
+	// keyed by Credential Format Identifier (OID4VP 1.0 Section 11.1). Each
+	// value carries format-specific members: alg_values for jwt_vc_json,
+	// sd-jwt_alg_values and kb-jwt_alg_values for dc+sd-jwt (Appendix B).
+	VPFormatsSupported map[string]any `json:"vp_formats_supported,omitempty"`
+
+	// VPFormats is the name this parameter had before 1.0 renamed it to
+	// vp_formats_supported. It is read so that a Verifier still on a draft is
+	// understood, and is never sent.
+	VPFormats map[string]any `json:"vp_formats,omitempty"`
+
 	// EncryptedResponseEncValuesSupported lists the JWE "enc" values the
 	// Verifier accepts for the encrypted Authorization Response, replacing
 	// authorization_encrypted_response_enc in OID4VP 1.1. It has no effect when
 	// JOSE HPKE Integrated Encryption is used, because that mode has no separate
 	// content encryption algorithm.
 	EncryptedResponseEncValuesSupported []string `json:"encrypted_response_enc_values_supported,omitempty"`
+}
+
+// SupportedFormats returns the Credential Formats the Verifier accepts.
+//
+// OID4VP 1.0 calls this vp_formats_supported; a Verifier still on a pre-final
+// draft sends vp_formats instead, so that is accepted as a fallback.
+func (v *VerifierMetadata) SupportedFormats() map[string]any {
+	if v == nil {
+		return nil
+	}
+	if len(v.VPFormatsSupported) > 0 {
+		return v.VPFormatsSupported
+	}
+	return v.VPFormats
 }
 
 // UsesDCQL reports whether the request carries a DCQL query rather than a

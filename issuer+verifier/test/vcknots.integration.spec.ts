@@ -399,7 +399,7 @@ describe('Vcknots', () => {
     const verifierId = ClientId('https://example.com/verifier')
     const metadata = VerifierMetadata({
       client_name: 'Test Verifier',
-      vp_formats: {
+      vp_formats_supported: {
         jwt_vc_json: {
           alg: ['ES256'],
         },
@@ -480,10 +480,21 @@ describe('Vcknots', () => {
       assert.equal(authzRequest.client_id, `redirect_uri:${verifierId}`)
       assert.equal(authzRequest.response_type, 'vp_token')
       assert.equal(authzRequest.response_mode, 'direct_post')
-      assert.equal(authzRequest.client_metadata?.client_name, metadata.client_name)
-      assert.deepEqual(authzRequest.client_metadata?.vp_formats, metadata.vp_formats)
+      // OpenID4VP 1.0 Section 5.1 allows only jwks,
+      // encrypted_response_enc_values_supported and vp_formats_supported in
+      // client_metadata, so registration members such as client_name stay out
+      // of the request even though the Verifier is configured with them.
+      assert.equal(authzRequest.client_metadata?.client_name, undefined)
+      assert.deepEqual(
+        authzRequest.client_metadata?.vp_formats_supported,
+        metadata.vp_formats_supported
+      )
       assert.ok(authzRequest.client_metadata.jwks)
       assert.ok(authzRequest.client_metadata.jwks.keys)
+      // Section 5.1 requires a kid on every key in the set.
+      for (const key of authzRequest.client_metadata.jwks.keys) {
+        assert.ok(key?.kid, 'every JWK in client_metadata.jwks needs a kid')
+      }
       assert.ok(authzRequest.nonce)
       assert.ok('presentation_definition' in authzRequest && authzRequest.presentation_definition)
       assert.deepEqual(authzRequest.presentation_definition, presentationDefinition)
@@ -506,10 +517,21 @@ describe('Vcknots', () => {
       assert.equal(authzRequest.client_id, `redirect_uri:${verifierId}`)
       assert.equal(authzRequest.response_type, 'vp_token')
       assert.equal(authzRequest.response_mode, 'direct_post')
-      assert.equal(authzRequest.client_metadata?.client_name, metadata.client_name)
-      assert.deepEqual(authzRequest.client_metadata?.vp_formats, metadata.vp_formats)
+      // OpenID4VP 1.0 Section 5.1 allows only jwks,
+      // encrypted_response_enc_values_supported and vp_formats_supported in
+      // client_metadata, so registration members such as client_name stay out
+      // of the request even though the Verifier is configured with them.
+      assert.equal(authzRequest.client_metadata?.client_name, undefined)
+      assert.deepEqual(
+        authzRequest.client_metadata?.vp_formats_supported,
+        metadata.vp_formats_supported
+      )
       assert.ok(authzRequest.client_metadata.jwks)
       assert.ok(authzRequest.client_metadata.jwks.keys)
+      // Section 5.1 requires a kid on every key in the set.
+      for (const key of authzRequest.client_metadata.jwks.keys) {
+        assert.ok(key?.kid, 'every JWK in client_metadata.jwks needs a kid')
+      }
       assert.ok(authzRequest.nonce)
       assert.ok('dcql_query' in authzRequest && authzRequest.dcql_query)
       assert.deepEqual(authzRequest.dcql_query, dcqlQuery)

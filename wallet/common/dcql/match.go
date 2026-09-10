@@ -172,8 +172,10 @@ func (c CredentialQuery) MatchesMeta(credential any) error {
 		}
 	}
 
-	// W3C VC: one inner array of type_values must be fully present in the
-	// credential's types.
+	// W3C VC: type_values holds fully expanded types (IRIs), obtained by
+	// applying the credential's @context to its type entries. One inner array
+	// must be present in full, regardless of order or additional types
+	// (Appendix B.1.1).
 	if raw, present := c.Meta["type_values"]; present {
 		options, ok := raw.([]any)
 		if !ok {
@@ -192,15 +194,17 @@ func (c CredentialQuery) MatchesMeta(credential any) error {
 			}
 		}
 		if !matched {
-			return fmt.Errorf("the credential types match none of the type_values options")
+			return fmt.Errorf("the expanded credential types %v match none of the type_values options", types)
 		}
 	}
 
 	return nil
 }
 
-// credentialTypes reads the type array of a W3C Credential, whether it sits at
-// the top level or under the vc claim of a JWT-encoded one.
+// credentialTypes reads the type array of a W3C Credential and expands each
+// entry against the credential's @context, which is what type_values is
+// compared with. A JWT-encoded credential nests it under the vc claim; the
+// @context sits alongside the types, so both are read from the same object.
 func credentialTypes(claims map[string]any) []string {
 	source := claims
 	if vc, ok := claims["vc"].(map[string]any); ok {
@@ -211,13 +215,13 @@ func credentialTypes(claims map[string]any) []string {
 	if !ok {
 		return nil
 	}
-	types := make([]string, 0, len(raw))
+	declared := make([]string, 0, len(raw))
 	for _, value := range raw {
 		if name, ok := value.(string); ok {
-			types = append(types, name)
+			declared = append(declared, name)
 		}
 	}
-	return types
+	return ExpandCredentialTypes(declared, CredentialContexts(source))
 }
 
 func containsString(values []any, wanted string) bool {

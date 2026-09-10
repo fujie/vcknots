@@ -1,7 +1,13 @@
 import { z } from 'zod'
 
-// https://openid.net/specs/openid-4-verifiable-presentations-1_0-ID2.html#name-verifier-metadata-client-me
+// https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html#name-verifier-metadata-client-me
 // https://www.rfc-editor.org/rfc/rfc7591.html#section-2
+//
+// This is the Verifier's stored configuration, which is a superset of what a
+// request may carry. OpenID4VP 1.0 Section 5.1 allows only `jwks`,
+// `encrypted_response_enc_values_supported` and `vp_formats_supported` in the
+// `client_metadata` request parameter, and requires a Wallet to ignore
+// everything else; `toClientMetadata` below projects this object down to those.
 export const verifierMetadataSchema = z.object({
   redirect_uris: z.array(z.string()).optional(),
   token_endpoint_auth_method: z
@@ -49,16 +55,25 @@ export const verifierMetadataSchema = z.object({
   software_id: z.string().optional(),
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
-  vp_formats: z.record(z.string(), z.unknown()),
-  authorization_signed_response_alg: z.string().optional(), // mentioned in OID4VP draft24
-  authorization_encrypted_response_alg: z.string().optional(), // mentioned in OID4VP draft24
-  authorization_encrypted_response_enc: z.string().optional(), // mentioned in OID4VP draft24
+  /**
+   * The Credential Formats this Verifier supports, keyed by Credential Format
+   * Identifier (Section 11.1). Each value carries format-specific members —
+   * `alg_values` for `jwt_vc_json`, `sd-jwt_alg_values` and `kb-jwt_alg_values`
+   * for `dc+sd-jwt` (Appendix B).
+   */
+  vp_formats_supported: z.record(z.string(), z.unknown()),
+  /**
+   * The alg this Verifier signs Request Objects with. This is local
+   * configuration, not a request parameter: OpenID4VP 1.0 has no
+   * `authorization_signed_response_alg`, and a Wallet ignores it, so it is
+   * never sent as part of `client_metadata`.
+   */
+  authorization_signed_response_alg: z.string().optional(),
   /**
    * The JWE `enc` values the Verifier accepts for an encrypted Authorization
-   * Response (OID4VP 1.1 Section 8.3), replacing
-   * authorization_encrypted_response_enc. It has no effect when JOSE HPKE
-   * Integrated Encryption is used, since that mode has no separate content
-   * encryption algorithm.
+   * Response (Section 8.3). It has no effect when JOSE HPKE Integrated
+   * Encryption is used, since that mode has no separate content encryption
+   * algorithm.
    */
   encrypted_response_enc_values_supported: z.array(z.string()).nonempty().optional(),
 })
@@ -91,10 +106,37 @@ export const VerifierMetadata = (value?: {
   software_id?: string
   software_version?: string
   response_types?: string[]
-  vp_formats?: Record<string, unknown>
+  vp_formats_supported?: Record<string, unknown>
   authorization_signed_response_alg?: string
-  authorization_encrypted_response_alg?: string
-  authorization_encrypted_response_enc?: string
   encrypted_response_enc_values_supported?: string[]
 }) => verifierMetadataSchema.parse(value)
 VerifierMetadata.schema = verifierMetadataSchema
+
+/**
+ * The Verifier metadata a request may carry.
+ *
+ * OpenID4VP 1.0 Section 5.1 names exactly three members for the
+ * `client_metadata` request parameter — `jwks`,
+ * `encrypted_response_enc_values_supported` and `vp_formats_supported` — and
+ * states that a Wallet MUST ignore anything else unless a profile defines it.
+ * Sending the whole stored configuration would put RFC 7591 registration
+ * members and local settings on the wire for a Wallet to discard, so the
+ * request carries only these.
+ */
+export type ClientMetadata = {
+  vp_formats_supported: Record<string, unknown>
+  jwks?: VerifierMetadata['jwks']
+  encrypted_response_enc_values_supported?: string[]
+}
+
+export const toClientMetadata = (metadata: VerifierMetadata): ClientMetadata => ({
+  vp_formats_supported: metadata.vp_formats_supported,
+  ...(metadata.jwks ? { jwks: metadata.jwks } : {}),
+  ...(metadata.encrypted_response_enc_values_supported
+    ? {
+        encrypted_response_enc_values_supported: [
+          ...metadata.encrypted_response_enc_values_supported,
+        ],
+      }
+    : {}),
+})

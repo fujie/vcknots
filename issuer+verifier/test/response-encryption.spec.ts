@@ -44,9 +44,9 @@ const query = PresentationExchange({
 const verifierMetadata = () =>
   VerifierMetadata({
     client_name: 'Test Verifier',
-    vp_formats: {
-      jwt_vc_json: { alg_values_supported: ['ES256'] },
-      jwt_vp_json: { alg_values_supported: ['ES256'] },
+    vp_formats_supported: {
+      jwt_vc_json: { alg_values: ['ES256'] },
+      jwt_vp_json: { alg_values: ['ES256'] },
     },
   })
 

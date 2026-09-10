@@ -14,9 +14,9 @@ describe('dynamodbVerifierMetadataStore', () => {
 
   const verifierId = VerifierClientId('https://verifier.example.com')
   const metadata: VerifierMetadata = {
-    vp_formats: {
-      jwt_vc_json: { alg_values_supported: ['ES256'] },
-      jwt_vp_json: { alg_values_supported: ['ES256'] },
+    vp_formats_supported: {
+      jwt_vc_json: { alg_values: ['ES256'] },
+      jwt_vp_json: { alg_values: ['ES256'] },
     },
   }
 
@@ -79,7 +79,7 @@ describe('dynamodbVerifierMetadataStore', () => {
     const updated: VerifierMetadata = {
       ...metadata,
       client_name: 'Updated Verifier',
-      vp_formats: {
+      vp_formats_supported: {
         'dc+sd-jwt': { 'sd-jwt_alg_values': ['ES256'], 'kb-jwt_alg_values': ['ES256'] },
       },
     }

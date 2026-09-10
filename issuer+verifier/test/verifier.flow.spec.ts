@@ -180,9 +180,9 @@ describe('VerifierFlow', () => {
     it('should generate and persist keys via key store when options are omitted', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        vp_formats_supported: {
+          jwt_vc_json: { alg_values: ['ES256'] },
+          jwt_vp_json: { alg_values: ['ES256'] },
         },
       })
       const { publicKey } = await generateKeyPair('ES256', { extractable: true })
@@ -206,9 +206,9 @@ describe('VerifierFlow', () => {
       const events: string[] = []
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        vp_formats_supported: {
+          jwt_vc_json: { alg_values: ['ES256'] },
+          jwt_vp_json: { alg_values: ['ES256'] },
         },
       })
       const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
@@ -237,9 +237,9 @@ describe('VerifierFlow', () => {
       const verifierId = ClientId('https://example.com')
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        vp_formats_supported: {
+          jwt_vc_json: { alg_values: ['ES256'] },
+          jwt_vp_json: { alg_values: ['ES256'] },
         },
       })
 
@@ -274,9 +274,9 @@ describe('VerifierFlow', () => {
       const verifierId = ClientId('https://example.com')
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        vp_formats_supported: {
+          jwt_vc_json: { alg_values: ['ES256'] },
+          jwt_vp_json: { alg_values: ['ES256'] },
         },
       })
 
@@ -310,12 +310,12 @@ describe('VerifierFlow', () => {
     it('creates request for Presentation Exchange', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
+        vp_formats_supported: {
           jwt_vc_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           jwt_vp_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           ldp_vp: {
             proof_type: ['JsonWebSignature2020'],
@@ -376,12 +376,12 @@ describe('VerifierFlow', () => {
     it('creates request for Dcql', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
+        vp_formats_supported: {
           jwt_vc_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           jwt_vp_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           ldp_vp: {
             proof_type: ['JsonWebSignature2020'],
@@ -485,12 +485,12 @@ describe('VerifierFlow', () => {
     it('should save RequestObject and returns request_uri when request_uri is used', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
+        vp_formats_supported: {
           jwt_vc_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           jwt_vp_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           ldp_vp: {
             proof_type: ['JsonWebSignature2020'],
@@ -554,12 +554,12 @@ describe('VerifierFlow', () => {
     it('should throw invalid_request when request_uri is true and base_url is not present', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
+        vp_formats_supported: {
           jwt_vc_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           jwt_vp_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           ldp_vp: {
             proof_type: ['JsonWebSignature2020'],
@@ -614,12 +614,12 @@ describe('VerifierFlow', () => {
     it('should throw invalid_request when neither request_uri nor base_url is present', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
+        vp_formats_supported: {
           jwt_vc_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           jwt_vp_json: {
-            alg_values_supported: ['ES256'],
+            alg_values: ['ES256'],
           },
           ldp_vp: {
             proof_type: ['JsonWebSignature2020'],
@@ -675,7 +675,7 @@ describe('VerifierFlow', () => {
     it('should include transaction_data for dc+sd-jwt format in presentation exchange', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
+        vp_formats_supported: {
           'dc+sd-jwt': {},
         },
       })
@@ -774,9 +774,9 @@ describe('VerifierFlow', () => {
       mock.method(mockVerifierMetadataStore, 'fetch', async () =>
         VerifierMetadata({
           client_name: 'test',
-          vp_formats: {
+          vp_formats_supported: {
             jwt_vp_json: {
-              alg_values_supported: ['ES256'],
+              alg_values: ['ES256'],
             },
           },
         })
