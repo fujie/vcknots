@@ -47,7 +47,7 @@ func TestApplyOID4VPRequestOptionsKeyBinding(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			options := &sdjwtvc.SdJwtVcPresentationOptions{}
-			applyOID4VPRequestOptions(test.req, options)
+			applyOID4VPRequestOptions(test.req, options, "c")
 
 			if options.RequireKeyBinding != test.want {
 				t.Errorf("RequireKeyBinding = %v, want %v", options.RequireKeyBinding, test.want)
@@ -57,6 +57,44 @@ func TestApplyOID4VPRequestOptionsKeyBinding(t *testing.T) {
 			}
 			if options.Nonce != test.req.Nonce {
 				t.Errorf("Nonce = %q, want the request nonce %q", options.Nonce, test.req.Nonce)
+			}
+		})
+	}
+}
+
+// A request may carry several Credential Queries with different binding
+// requirements. Only the query the presentation answers decides: a decoy query
+// turning binding off must not strip the Key Binding JWT from a credential
+// whose own query requires one.
+func TestHolderBindingFollowsTheAnsweredCredentialQuery(t *testing.T) {
+	off := false
+	req := &oid4vp.CredentialPresentationRequest{
+		OAuthAuthzRequest: &oid4vp.OAuthAuthzRequest{
+			ClientID: "redirect_uri:https://verifier.example.com/callback",
+			Nonce:    "n-0S6_WzA2Mj",
+		},
+		DCQLQuery: &dcql.Query{Credentials: []dcql.CredentialQuery{
+			{ID: "bound", Format: "dc+sd-jwt"},
+			{ID: "unbound", Format: "dc+sd-jwt", RequireCryptographicHolderBinding: &off},
+		}},
+	}
+
+	tests := []struct {
+		answered string
+		want     bool
+	}{
+		{answered: "bound", want: true},
+		{answered: "unbound", want: false},
+		// An id the request does not contain cannot turn binding off.
+		{answered: "not-in-the-request", want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.answered, func(t *testing.T) {
+			options := &sdjwtvc.SdJwtVcPresentationOptions{}
+			applyOID4VPRequestOptions(req, options, test.answered)
+			if options.RequireKeyBinding != test.want {
+				t.Errorf("RequireKeyBinding = %v, want %v when answering %q", options.RequireKeyBinding, test.want, test.answered)
 			}
 		})
 	}

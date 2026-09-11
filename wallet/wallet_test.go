@@ -3961,7 +3961,7 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			Nonce:    "old-nonce",
 		}
 
-		applyOID4VPRequestOptions(req, opts)
+		applyOID4VPRequestOptions(req, opts, "")
 
 		if opts.Audience != req.ClientID {
 			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
@@ -3978,7 +3978,7 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			Nonce:             "old-nonce",
 		}
 
-		applyOID4VPRequestOptions(req, opts)
+		applyOID4VPRequestOptions(req, opts, "")
 
 		if opts.Audience != req.ClientID {
 			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)

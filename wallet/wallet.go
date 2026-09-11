@@ -1503,7 +1503,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 			return "", err
 		}
 	}
-	applyOID4VPRequestOptions(req, serializeOptions)
+	applyOID4VPRequestOptions(req, serializeOptions, credentialQueryID)
 
 	presentation, err := w.buildPresentation(credentials, key, req)
 	if err != nil {
@@ -1756,7 +1756,7 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, key IKeyEntry
 	return presentation, nil
 }
 
-func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
+func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions, credentialQueryID string) {
 	if options == nil || req == nil || req.OAuthAuthzRequest == nil {
 		return
 	}
@@ -1769,23 +1769,29 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 	// true), and Appendix B.3.6 states what the KB-JWT's nonce and aud must be.
 	// The audience and nonce set above are exactly those values.
 	if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
-		sdOpts.RequireKeyBinding = holderBindingRequired(req)
+		sdOpts.RequireKeyBinding = holderBindingRequired(req, credentialQueryID)
 	}
 }
 
-// holderBindingRequired reports whether the request asks for Cryptographic
-// Holder Binding. A DCQL query may turn it off per Credential Query; anything
-// else leaves it on, which is the default Section 6.1 states.
-func holderBindingRequired(req *oid4vp.CredentialPresentationRequest) bool {
+// holderBindingRequired reports whether the Credential Query this presentation
+// answers asks for Cryptographic Holder Binding.
+//
+// The decision belongs to that query alone. require_cryptographic_holder_binding
+// is set per Credential Query (Section 6.1), so another query in the same
+// request turning binding off says nothing about this credential; honouring it
+// would strip the Key Binding JWT from a presentation whose own query required
+// one, leaving a bearer presentation anyone who captured it could replay. A
+// request without DCQL, or a query id the request does not contain, keeps
+// binding on, which is the default Section 6.1 states.
+func holderBindingRequired(req *oid4vp.CredentialPresentationRequest, credentialQueryID string) bool {
 	if !req.UsesDCQL() {
 		return true
 	}
-	for _, credential := range req.DCQLQuery.Credentials {
-		if !credential.RequiresHolderBinding() {
-			return false
-		}
+	credential, found := req.DCQLQuery.CredentialQueryByID(credentialQueryID)
+	if !found {
+		return true
 	}
-	return true
+	return credential.RequiresHolderBinding()
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.
