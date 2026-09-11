@@ -335,6 +335,36 @@ describe('sd-jwt provider', () => {
     assert.ok((mockCnonceStore.revoke as any).mock.callCount() >= 1, 'revoke should be called')
   })
 
+  it('rejects a Key-Binding JWT whose nonce is not the one the request carried', async () => {
+    // Appendix B.3.6: "the nonce claim MUST be the value of nonce from the
+    // Authorization Request". The nonce store only establishes that a nonce was
+    // issued and unused, so without this check a nonce minted for one request
+    // would satisfy another that happened to be open at the same time.
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+        expectedNonce: 'a-nonce-from-some-other-request',
+      }),
+      (error: unknown) => String(error).includes('nonce')
+    )
+  })
+
+  it('accepts a Key-Binding JWT whose nonce is the one the request carried', async () => {
+    const { kbJwt } = { kbJwt: fixtureDcSdJwtVpWithKb.split('~').at(-1) as string }
+    const nonce = JSON.parse(Buffer.from(kbJwt.split('.')[1], 'base64url').toString())
+      .nonce as string
+
+    const result = await provider.verify(fixtureDcSdJwtVpWithKb, {
+      kind: 'dc+sd-jwt',
+      isKbJwt: true,
+      expectedAud: dcKbJwtExpectedAud,
+      expectedNonce: nonce,
+    })
+    assert.ok(result)
+  })
+
   it('reports supported format via canHandle', () => {
     assert.equal(provider.canHandle('dc+sd-jwt'), true)
     assert.equal(provider.canHandle('jwt_vc_json'), false)
