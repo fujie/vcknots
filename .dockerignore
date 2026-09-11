@@ -1,0 +1,27 @@
+# Keep the build context small. Dependencies are installed inside the image from
+# the lockfile and compiled output is produced there too, so neither belongs in
+# the context — the working tree is otherwise ~1.6 GB, almost all node_modules.
+
+node_modules
+**/node_modules
+
+# Compiled output, rebuilt inside the image
+**/lib
+**/dist
+docusaurus/build
+docusaurus/.docusaurus
+wallet/webwallet/webwallet
+
+# Version control and editor state
+.git
+.vscode
+.idea
+.DS_Store
+
+# Local environment and secrets
+.env
+.env.*
+
+# Test and tooling artefacts
+coverage
+**/*.log

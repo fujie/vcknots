@@ -1,0 +1,23 @@
+{
+	"name": "e2e",
+	"version": "0.0.0",
+	"description": "End-to-end test of the issue, present and verify flow across the sample server and the Go web wallet.",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"pretest": "pnpm --filter \"@trustknots/server...\" build",
+		"test": "node --import tsx --test \"test/**/*.spec.ts\"",
+		"start:server": "pnpm --filter @trustknots/server start",
+		"start:wallet": "cd ../wallet && go run ./webwallet/cmd/webwallet",
+		"format": "biome format --write ./src ./test",
+		"lint": "biome lint ./src ./test",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": ["oid4vci", "oid4vp", "end-to-end"],
+	"author": "Trust Knots Project Team",
+	"license": "Apache-2.0",
+	"packageManager": "pnpm@11.10.0",
+	"devDependencies": {
+		"@trustknots/server": "workspace:*"
+	}
+}

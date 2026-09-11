@@ -1,0 +1,47 @@
+name: CI e2e
+
+# The end-to-end run drives the sample server and the Go web wallet against each
+# other, so it needs both toolchains and reacts to changes in either.
+on:
+  pull_request:
+    branches: ["main", "feat/oid4vci-1.0"]
+    paths:
+      - e2e/**
+      - issuer+verifier/**
+      - server/core/**
+      - server/single/**
+      - server/samples/**
+      - wallet/**
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: pnpm/action-setup@v6.0.10
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: "pnpm"
+
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version: 1.26.6
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Go dependencies
+        working-directory: ./wallet
+        run: go mod download
+
+      - name: Run typecheck
+        run: pnpm --filter e2e typecheck
+
+      - name: Run tests
+        run: pnpm --filter e2e test

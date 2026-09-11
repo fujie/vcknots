@@ -9,11 +9,24 @@ type DirectPostVpAudTransaction = {
   state: string
   expiresAt: number
   /**
+   * The request parameters an encrypted response is bound to through the
+   * session_info structure of OpenID4VP §8.3.1. They are recorded once the
+   * request has been created, because the nonce is minted there and the
+   * response_uri is per transaction.
+   */
+  session?: ResponseEncryptionSessionBinding
+  /**
    * The DCQL query the request carried, when it used one. The response has to be
    * checked against it, so the query has to outlive the request. A transaction
    * without one used Presentation Exchange.
    */
   dcqlQuery?: DcqlQuery
+}
+
+/** The session context needed to decrypt an encrypted Authorization Response. */
+export type ResponseEncryptionSessionBinding = {
+  nonce: string
+  responseUri: string
 }
 
 export type DirectPostVpAudTransactionStore = {
@@ -30,6 +43,14 @@ export type DirectPostVpAudTransactionStore = {
     | { ok: false; error: { error: string; error_description: string } }
   consume: (transactionId: string, state: string) => void
   /**
+   * Records the request parameters an encrypted response will be bound to. The
+   * request has to exist first, since it is what mints the nonce.
+   */
+  bindSession: (
+    transactionId: string,
+    session: ResponseEncryptionSessionBinding
+  ) => { ok: true } | { ok: false; notFound: true }
+  /**
    * Records the DCQL query the request carried, so the callback can check the
    * `vp_token` against the query that produced it.
    */
@@ -38,14 +59,13 @@ export type DirectPostVpAudTransactionStore = {
     query: DcqlQuery
   ) => { ok: true } | { ok: false; notFound: true }
   deleteById: (transactionId: string) => { ok: true } | { ok: false; notFound: true }
-  getById: (
-    transactionId: string
-  ) =>
+  getById: (transactionId: string) =>
     | {
         kind: 'ok'
         state: string
         clientId: ClientIdentifier
         expiresAt: number
+        session?: ResponseEncryptionSessionBinding
         dcqlQuery?: DcqlQuery
       }
     | { kind: 'not_found' }
@@ -158,6 +178,18 @@ export function createDirectPostVpAudTransactionStore(options?: {
     return { ok: true, aud: rec.clientId, transactionId, dcqlQuery: rec.dcqlQuery }
   }
 
+  const bindSession = (
+    transactionId: string,
+    session: ResponseEncryptionSessionBinding
+  ): { ok: true } | { ok: false; notFound: true } => {
+    const rec = byId.get(transactionId)
+    if (rec === undefined) {
+      return { ok: false, notFound: true }
+    }
+    byId.set(transactionId, { ...rec, session })
+    return { ok: true }
+  }
+
   const bindDcqlQuery = (
     transactionId: string,
     query: DcqlQuery
@@ -170,9 +202,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
     return { ok: true }
   }
 
-  const deleteById = (
-    transactionId: string
-  ): { ok: true } | { ok: false; notFound: true } => {
+  const deleteById = (transactionId: string): { ok: true } | { ok: false; notFound: true } => {
     const rec = byId.get(transactionId)
     if (rec === undefined) {
       return { ok: false, notFound: true }
@@ -189,6 +219,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
         state: string
         clientId: ClientIdentifier
         expiresAt: number
+        session?: ResponseEncryptionSessionBinding
         dcqlQuery?: DcqlQuery
       }
     | { kind: 'not_found' }
@@ -206,6 +237,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
       state: rec.state,
       clientId: rec.clientId,
       expiresAt: rec.expiresAt,
+      session: rec.session,
       dcqlQuery: rec.dcqlQuery,
     }
   }
@@ -214,6 +246,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
     register,
     resolveExpectedAudFromWalletState,
     consume,
+    bindSession,
     bindDcqlQuery,
     deleteById,
     getById,

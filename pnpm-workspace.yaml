@@ -1,5 +1,6 @@
 packages:
   - issuer+verifier
+  - e2e
   - aws
   - server/aws/src
   - server/aws/resources

@@ -14,6 +14,10 @@ import {
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
 import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
+import {
+  createPresentationResultStore,
+  readResponseEncryptionInfo,
+} from '../utils/presentation-result-store.js'
 import { err } from '@trustknots/vcknots/errors'
 
 /**
@@ -88,6 +92,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   const verifierFlow = initializeVerifierFlow(context)
   const vpAudTx = createDirectPostVpAudTransactionStore()
+  // Lets a verification screen poll for the outcome, which arrives on the
+  // wallet's connection rather than on the browser's.
+  const presentationResults = createPresentationResultStore()
 
   type PayloadResult =
     | { ok: true; payload: Partial<VerifierAuthorizationResponse> }
@@ -159,7 +166,14 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       },
     })
 
-  /** The Presentation Exchange definition this server asks for. */
+  /**
+   * The query a request carries. DCQL is what 1.0 defines; Presentation Exchange
+   * stays reachable so wallets that have not moved yet keep working.
+   */
+  const buildQuery = (credentialId: string, queryLanguage: QueryLanguage) =>
+    queryLanguage === 'dcql' ? buildTestDcqlQuery(credentialId) : buildTestQuery(credentialId)
+
+  /** The presentation definition both request endpoints ask for. */
   const buildTestQuery = (credentialId: string) =>
     PresentationExchange({
       presentation_definition: {
@@ -191,13 +205,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         ],
       },
     })
-
-  /**
-   * The query a request carries. DCQL is what 1.0 defines; Presentation Exchange
-   * stays reachable so wallets that have not moved yet keep working.
-   */
-  const buildQuery = (credentialId: string, queryLanguage: QueryLanguage) =>
-    queryLanguage === 'dcql' ? buildTestDcqlQuery(credentialId) : buildTestQuery(credentialId)
 
   /**
    * Verifies the `vp_token` with whichever query language the request used. A
@@ -274,6 +281,13 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         vpAudTx.bindDcqlQuery(registered.transactionId, buildTestDcqlQuery(credentialId).dcql_query)
       }
       console.log('[verify] direct_post transaction_id:', registered.transactionId)
+      presentationResults.start({
+        transactionId: registered.transactionId,
+        state,
+        clientId: client_id,
+        responseMode: 'direct_post',
+        responseUri: `${baseUrl}/callback`,
+      })
 
       const encoded = Object.entries({ ...request, state })
         .map(([key, value]) => {
@@ -282,9 +296,197 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         })
         .join('&')
 
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp://authorize?${encoded}`, 200, {
+        'X-Presentation-Transaction-Id': registered.transactionId,
+      })
     } catch (err) {
       const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
+  /**
+   * Create a request that asks for an encrypted Authorization Response
+   * (OpenID4VP §8.3, response_mode=direct_post.jwt).
+   *
+   * Each transaction gets its own response_uri. The wallet folds it, together
+   * with client_id and nonce, into the session_info structure of §8.3.1, so the
+   * response only decrypts against the transaction it was issued for. That also
+   * solves the ordering problem at the endpoint: `state` is inside the
+   * ciphertext, so the transaction has to be identifiable from the URL.
+   */
+  verifyApp.post('/request-encrypted', async (c) => {
+    try {
+      const verifierId = VerifierClientId(baseUrl)
+      type Payload = Record<string, unknown>
+      const body: Payload = await c.req.json<Payload>().catch(() => ({}))
+
+      const credentialId =
+        typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
+          ? body.credentialId
+          : undefined
+      if (!credentialId) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'credentialId must be a non-empty string.',
+          },
+          400
+        )
+      }
+      const state =
+        typeof body.state === 'string' && body.state.trim() !== '' ? body.state.trim() : undefined
+      if (state === undefined) {
+        return c.json({ error: 'invalid_request', error_description: 'state is required.' }, 400)
+      }
+      const client_id = validateClientIdScheme(body.client_id as string)
+
+      const registered = vpAudTx.register(client_id, state)
+      if (!registered.ok) {
+        return c.json(registered.error, 400)
+      }
+      const responseUri = `${baseUrl}/callback/${encodeURIComponent(registered.transactionId)}`
+
+      const queryLanguage = readQueryLanguage(body.queryLanguage)
+      const request = await verifierFlow.createAuthzRequest(
+        verifierId,
+        'vp_token',
+        client_id,
+        'direct_post.jwt',
+        buildQuery(credentialId, queryLanguage),
+        false,
+        { response_uri: responseUri, base_url: baseUrl }
+      )
+      if (!request.nonce) {
+        return c.json(
+          {
+            error: 'internal_server_error',
+            error_description: 'The authorization request carries no nonce.',
+          },
+          500
+        )
+      }
+
+      // The nonce is minted by createAuthzRequest, so the session can only be
+      // recorded now.
+      vpAudTx.bindSession(registered.transactionId, { nonce: request.nonce, responseUri })
+      if (queryLanguage === 'dcql') {
+        vpAudTx.bindDcqlQuery(registered.transactionId, buildTestDcqlQuery(credentialId).dcql_query)
+      }
+      console.log('[verify] direct_post.jwt transaction_id:', registered.transactionId)
+      presentationResults.start({
+        transactionId: registered.transactionId,
+        state,
+        clientId: client_id,
+        responseMode: 'direct_post.jwt',
+        responseUri,
+      })
+
+      const encoded = Object.entries({ ...request, state })
+        .map(([key, value]) => {
+          const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
+          return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
+        })
+        .join('&')
+
+      return c.text(`openid4vp://authorize?${encoded}`, 200, {
+        'X-Presentation-Transaction-Id': registered.transactionId,
+      })
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
+  /**
+   * Receive an encrypted Authorization Response (OpenID4VP §8.3) and verify the
+   * vp_token it carries.
+   */
+  verifyApp.post('/callback/:transactionId', async (c) => {
+    try {
+      const verifierId = VerifierClientId(baseUrl)
+      const contentType = normalizeContentType(c.req.header('content-type') ?? '')
+      if (contentType !== 'application/x-www-form-urlencoded') {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'content-type must be application/x-www-form-urlencoded',
+          },
+          400
+        )
+      }
+
+      const formData = await c.req.formData().catch(() => null)
+      const response = formData?.get('response')
+      if (typeof response !== 'string' || response.trim() === '') {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'response is required for an encrypted authorization response.',
+          },
+          400
+        )
+      }
+
+      const transactionId = c.req.param('transactionId')
+      const transaction = vpAudTx.getById(transactionId)
+      if (transaction.kind !== 'ok' || !transaction.session) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'unknown or expired transaction',
+          },
+          400
+        )
+      }
+
+      // Read for display only. Whether the response is acceptable is decided by
+      // the decryption below, not by what its header claims.
+      const encryption = readResponseEncryptionInfo(response)
+
+      try {
+        // The session context comes from what this server issued, never from the
+        // response, which is what makes decryption fail closed on a response
+        // captured from another transaction.
+        const authorizationResponse = await verifierFlow.decryptAuthorizationResponse(
+          verifierId,
+          response,
+          {
+            responseMode: 'direct_post.jwt',
+            clientId: transaction.clientId,
+            nonce: transaction.session.nonce,
+            responseUri: transaction.session.responseUri,
+          }
+        )
+
+        if (authorizationResponse.state !== transaction.state) {
+          const mismatch = {
+            error: 'invalid_request',
+            error_description: 'state does not match the transaction',
+          }
+          presentationResults.fail(transactionId, mismatch, encryption)
+          return c.json(mismatch, 400)
+        }
+
+        const vpPayload = await verifyResponse(
+          verifierId,
+          authorizationResponse,
+          transaction.dcqlQuery,
+          { expectedAud: transaction.clientId }
+        )
+        vpAudTx.consume(transactionId, transaction.state)
+        presentationResults.succeed(transactionId, vpPayload, encryption)
+        console.log('Verified encrypted VP Payload:', vpPayload)
+        return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
+      } catch (error) {
+        presentationResults.fail(transactionId, handleError(error), encryption)
+        throw error
+      }
+    } catch (err) {
+      const errorResponse = handleError(err)
+      console.log('error Response:', errorResponse)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
     }
@@ -340,15 +542,19 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(audResolved.error, 400)
       }
       console.log('[verify] expectedAud:', audResolved.aud)
-      const vpPayload = await verifyResponse(
-        verifierId,
-        authorizationResponse,
-        audResolved.dcqlQuery,
-        { expectedAud: audResolved.aud }
-      )
+      let vpPayload: unknown
+      try {
+        vpPayload = await verifyResponse(verifierId, authorizationResponse, audResolved.dcqlQuery, {
+          expectedAud: audResolved.aud,
+        })
+      } catch (error) {
+        presentationResults.fail(audResolved.transactionId, handleError(error))
+        throw error
+      }
       if (authorizationResponse.state != null && authorizationResponse.state !== '') {
         vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
       }
+      presentationResults.succeed(audResolved.transactionId, vpPayload)
       console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -528,6 +734,13 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(registered.error, 400)
       }
       console.log('[verify] direct_post transaction_id:', registered.transactionId)
+      presentationResults.start({
+        transactionId: registered.transactionId,
+        state: requestObject.state,
+        clientId: requestObject.client_id,
+        responseMode: 'direct_post',
+        responseUri: requestObject.response_uri ?? `${baseUrl}/callback`,
+      })
       // const params = requestObject.is_request_uri
       //   ? request
       //   : { ...request, state: requestObject.state }
@@ -538,7 +751,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         })
         .join('&')
 
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp://authorize?${encoded}`, 200, {
+        'X-Presentation-Transaction-Id': registered.transactionId,
+      })
     } catch (err) {
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -571,6 +786,23 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       return c.json(errorResponse, status)
     }
   })
+
+  /** Poll target for the verification screen: the outcome of one presentation. */
+  verifyApp.get('/presentations/:transactionId', async (c) => {
+    const result = presentationResults.get(c.req.param('transactionId'))
+    if (!result) {
+      return c.json(
+        { error: 'invalid_request', error_description: 'unknown or expired transaction' },
+        404
+      )
+    }
+    return c.json(result, 200)
+  })
+
+  /** Every presentation this process has started, newest first. */
+  verifyApp.get('/presentations', async (c) =>
+    c.json({ presentations: presentationResults.list() }, 200)
+  )
 
   verifyApp.get('/verified', async (c) => {
     console.log('Verified received from get request')

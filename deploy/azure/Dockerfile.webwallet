@@ -1,0 +1,40 @@
+# The Go web wallet.
+#
+# Built from the repository root:
+#   docker build -f deploy/azure/Dockerfile.webwallet .
+
+FROM golang:1.25-bookworm AS build
+WORKDIR /src
+
+# The module files come first so that a change to the source does not
+# invalidate the module download layer.
+COPY wallet/go.mod wallet/go.sum ./
+RUN go mod download
+
+COPY wallet/ ./
+RUN CGO_ENABLED=0 go build -o /out/webwallet ./webwallet/cmd/webwallet
+
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+
+# The wallet fetches issuer and verifier metadata over HTTPS, so it needs the
+# system trust store.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/webwallet /usr/local/bin/webwallet
+
+# The sample verifier certificate, used as the trust root when a signed Request
+# Object carries an x5c chain.
+COPY server/samples/certificate-openid-test/certificate_openid.pem /app/certificate_openid.pem
+ENV VCKNOTS_CERT_PATH=/app/certificate_openid.pem
+
+# The credential store is a bbolt database the wallet creates on first use.
+ENV WEBWALLET_STORE=/tmp/webwallet.db
+
+# Every flag has an environment variable behind it, so the command line stays
+# empty and the deployment configures the wallet through the environment.
+ENV WEBWALLET_ADDR=:8081
+EXPOSE 8081
+CMD ["webwallet"]

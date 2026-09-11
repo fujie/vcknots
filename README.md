@@ -26,6 +26,7 @@ Choose the documentation that matches your goal.
 | Build a Verifier | [Verifier Guide](https://trustknots.github.io/vcknots/docs/verifier) |
 | Check OpenID4VCI / OpenID4VP support | [Support Matrix](https://trustknots.github.io/vcknots/docs/support-matrix) |
 | Run the sample server | [Single Server README](./server/single/README.md) |
+| Try the whole flow end to end | [End-to-end test README](./e2e/README.md) |
 
 ## Installation
 
@@ -47,10 +48,12 @@ vcknots/
 │                       # Credential operations and key management
 ├── aws/                # @trustknots/aws (TypeScript)
 │                       # AWS providers (DynamoDB, KMS, Secrets Manager)
-└── server/             # Sample server implementations (TypeScript)
-    ├── single/         # @trustknots/server-single — single-tenant server
-    ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud integration
-    └── aws/            # @trustknots/server-aws — AWS Lambda handlers + CDK stack
+├── server/             # Sample server implementations (TypeScript)
+│   ├── single/         # @trustknots/server-single — single-tenant server
+│   ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud integration
+│   └── aws/            # @trustknots/server-aws — AWS Lambda handlers + CDK stack
+└── e2e/                # End-to-end test of issuance, presentation and verification
+                        # across the sample server and the Go web wallet
 ```
 
 ## Contributing

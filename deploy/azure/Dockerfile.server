@@ -1,0 +1,53 @@
+# The sample server, which acts as both Issuer and Verifier.
+#
+# The workspace is a pnpm monorepo, so the build stage needs the whole thing:
+# @trustknots/server depends on @trustknots/server-core and @trustknots/vcknots
+# as workspace packages, and all three are compiled from TypeScript.
+#
+# Built from the repository root:
+#   docker build -f deploy/azure/Dockerfile.server .
+
+FROM node:22-slim AS build
+WORKDIR /app
+
+RUN corepack enable
+
+# The manifests come first so that a change to the source does not invalidate
+# the dependency layer.
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY issuer+verifier/package.json ./issuer+verifier/
+COPY server/core/package.json ./server/core/
+COPY server/single/package.json ./server/single/
+COPY server/multi/package.json ./server/multi/
+COPY server/aws/src/package.json ./server/aws/src/
+COPY server/aws/resources/package.json ./server/aws/resources/
+COPY server/google-cloud/package.json ./server/google-cloud/
+COPY aws/package.json ./aws/
+COPY google-cloud/package.json ./google-cloud/
+COPY docusaurus/package.json ./docusaurus/
+COPY e2e/package.json ./e2e/
+
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+COPY . .
+RUN pnpm --filter "@trustknots/server..." build
+
+# Drop the build-time dependencies now that lib/ exists. The workspace layout
+# itself has to survive: server-core reads its sample metadata through a path
+# relative to its own package directory (`../../samples`, resolving to
+# server/samples), so flattening the packages — as `pnpm deploy` does — leaves it
+# reading a directory that is no longer there.
+# CI=true lets pnpm replace the existing modules directory without asking, which
+# it cannot do with no TTY attached.
+RUN CI=true pnpm install --frozen-lockfile --prod --ignore-scripts
+
+FROM node:22-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=build /app ./
+
+# Container Apps routes to this port; BASE_URL tells the server which public URL
+# to embed in the metadata it publishes.
+EXPOSE 8080
+CMD ["node", "server/single/lib/example.js"]

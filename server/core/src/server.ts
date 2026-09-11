@@ -223,6 +223,16 @@ export const createServer = (options?: VcknotsOptions) => {
       const option = { privateKey, certificate, format: 'pem', alg: 'ES256' } as const
       await verifierFlow.createVerifierMetadata(clientId, metadata, option)
 
+      // OpenID4VP §8.3 has the wallet encrypt to a key published in
+      // client_metadata.jwks, so the keys have to exist before the first
+      // direct_post.jwt request is issued.
+      const encryptionKeys = await verifierFlow.createResponseEncryptionKeys(clientId)
+      console.log(
+        `Verifier response encryption keys initialized: ${encryptionKeys
+          .map((key) => key.alg)
+          .join(', ')}`
+      )
+
       console.log(`Verifier metadata initialized for ${clientId}`)
       return true
     } catch (error) {

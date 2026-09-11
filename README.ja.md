@@ -25,6 +25,7 @@ VCKnots は、Verifiable Credentials エコシステムの開発をサポート�
 | Verifierを構築したい | [Verifierガイド](https://trustknots.github.io/vcknots/ja/docs/verifier) |
 | OpenID4VCI / OpenID4VPの対応状況を確認したい | [サポートマトリクス](https://trustknots.github.io/vcknots/ja/docs/support-matrix) |
 | サンプルサーバーを動かしたい | [Single Server README](./server/single/README.ja.md) |
+| 発行から検証までを通しで試したい | [E2E テスト README](./e2e/README.ja.md) |
 
 ## インストール
 
@@ -46,10 +47,12 @@ vcknots/
 │                       # Credential の受信・保管・提示、識別子・鍵管理機能
 ├── aws/                # @trustknots/aws (TypeScript)
 │                       # AWS プロバイダー (DynamoDB、KMS、Secrets Manager)
-└── server/             # サンプルサーバー実装 (TypeScript)
-    ├── single/         # @trustknots/server-single — シングルテナントサーバー
-    ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud 統合
-    └── aws/            # @trustknots/server-aws — AWS Lambda ハンドラー + CDK スタック
+├── server/             # サンプルサーバー実装 (TypeScript)
+│   ├── single/         # @trustknots/server-single — シングルテナントサーバー
+│   ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud 統合
+│   └── aws/            # @trustknots/server-aws — AWS Lambda ハンドラー + CDK スタック
+└── e2e/                # 発行・提示・検証を通しで実行する E2E テスト
+                        # サンプルサーバーと Go 製 Web Wallet を突き合わせる
 ```
 
 ## コントリビューション
