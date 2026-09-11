@@ -15,6 +15,7 @@ import {
 } from '../src/response-encryption'
 import { initializeContext } from '../src/vcknots.context'
 import { initializeVerifierFlow, VerifierFlow } from '../src/verifier.flows'
+import { toClientMetadata, VerifierMetadata } from '../src/verifier-metadata.types'
 import { VerifierMetadata } from '../src/verifier-metadata.types'
 
 const VERIFIER_ID = ClientId('https://verifier.example.com')
@@ -270,6 +271,30 @@ describe('encrypted authorization responses', () => {
           `client_metadata.jwks carries a signature algorithm: ${String(key?.alg)}`
         )
       }
+    })
+
+    it('publishes no key whose algorithm it cannot encrypt with', () => {
+      // ES256K is a registered JWS algorithm that a deny list of signature
+      // algorithms recognising ES/RS/PS/HS plus three digits would miss.
+      // Recognising encryption by name instead keeps the filter closed.
+      const metadata = VerifierMetadata({
+        ...verifierMetadata(),
+        jwks: {
+          keys: [
+            { kty: 'EC', crv: 'secp256k1', alg: 'ES256K', kid: 'signing-es256k', x: 'x', y: 'y' },
+            { kty: 'EC', crv: 'P-256', alg: 'HPKE-0', use: 'enc', kid: 'enc-1', x: 'x', y: 'y' },
+          ],
+        },
+      })
+
+      const published =
+        toClientMetadata(metadata, { responseMode: 'direct_post.jwt' }).jwks?.keys ?? []
+
+      assert.deepEqual(
+        published.map((key) => key?.kid),
+        ['enc-1'],
+        'only a key this library can encrypt with belongs in client_metadata.jwks'
+      )
     })
 
     it('publishes no jwks when the response mode does not encrypt', async () => {

@@ -1,3 +1,4 @@
+import { isSupportedResponseEncryptionAlgorithm } from './response-encryption'
 import { z } from 'zod'
 
 // https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html#name-verifier-metadata-client-me
@@ -132,21 +133,19 @@ export type ClientMetadata = {
 /**
  * Whether a key is one a Wallet could encrypt an Authorization Response to.
  *
- * Section 8.3 has the Wallet choose from `client_metadata.jwks` "based on
- * information about each key, such as the kty, use, alg", and requires `alg` to
- * be present. A key marked for signing is therefore not a candidate, and a key
- * with no `use` counts only when its `alg` names an encryption algorithm.
+ * Section 8.3 requires `alg` to be present on these keys and says "The JWE alg
+ * algorithm used MUST be equal to the alg value of the chosen jwk", so the
+ * algorithm decides it. The test is an allow list of the algorithms this
+ * library can actually decrypt with: recognising signing algorithms instead
+ * and excluding them would publish any key whose algorithm the list had not
+ * caught up with — `ES256K` and future registrations among them.
+ *
+ * `use` is checked only to exclude a key explicitly marked for signing. Section
+ * 8.3 has a Wallet consider keys whose `use` is absent, so requiring `enc`
+ * would drop a usable key a caller supplied without one.
  */
 const isResponseEncryptionKey = (key: { use?: string; alg?: string } | undefined): boolean =>
-  key != null &&
-  key.use !== 'sig' &&
-  typeof key.alg === 'string' &&
-  key.alg !== '' &&
-  !isSignatureAlgorithm(key.alg)
-
-/** The JWS algorithms this library signs Request Objects with (RFC 7518). */
-const isSignatureAlgorithm = (alg: string): boolean =>
-  /^(HS|RS|ES|PS)\d{3}$/.test(alg) || alg === 'EdDSA' || alg === 'none'
+  key != null && key.use !== 'sig' && isSupportedResponseEncryptionAlgorithm(key.alg)
 
 /**
  * Projects the stored Verifier configuration onto the `client_metadata` a
