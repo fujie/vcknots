@@ -255,8 +255,41 @@ describe('encrypted authorization responses', () => {
 
       assert.equal(request.response_mode, 'direct_post.jwt')
       assert.ok(request.nonce)
-      const encryptionKey = request.client_metadata?.jwks?.keys.find((key) => key?.alg === 'HPKE-0')
+      const keys = request.client_metadata?.jwks?.keys ?? []
+      const encryptionKey = keys.find((key) => key?.alg === 'HPKE-0')
       assert.ok(encryptionKey, 'the request must carry the encryption key the wallet encrypts to')
+
+      // Section 5.1 forbids using keys from this set to verify a signed request,
+      // so the Request Object signing key has no purpose in it. Publishing one
+      // leaves a Wallet reading a key it cannot use for encryption.
+      for (const key of keys) {
+        assert.ok(key?.kid, 'every JWK in client_metadata.jwks needs a kid')
+        assert.notEqual(key?.use, 'sig', 'a signing key does not belong in client_metadata.jwks')
+        assert.ok(
+          !/^(HS|RS|ES|PS)\d{3}$/.test(String(key?.alg)),
+          `client_metadata.jwks carries a signature algorithm: ${String(key?.alg)}`
+        )
+      }
+    })
+
+    it('publishes no jwks when the response mode does not encrypt', async () => {
+      await verifierFlow.createResponseEncryptionKeys(VERIFIER_ID, { algs: ['HPKE-0'] })
+
+      const request = await verifierFlow.createAuthzRequest(
+        VERIFIER_ID,
+        'vp_token',
+        CLIENT_ID,
+        'direct_post',
+        query,
+        false,
+        { response_uri: RESPONSE_URI }
+      )
+
+      assert.equal(
+        request.client_metadata?.jwks,
+        undefined,
+        'direct_post encrypts nothing, so no encryption key should be published'
+      )
     })
 
     it('round trips a response through the request it issued', async () => {

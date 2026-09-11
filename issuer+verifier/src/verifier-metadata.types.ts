@@ -129,14 +129,56 @@ export type ClientMetadata = {
   encrypted_response_enc_values_supported?: string[]
 }
 
-export const toClientMetadata = (metadata: VerifierMetadata): ClientMetadata => ({
-  vp_formats_supported: metadata.vp_formats_supported,
-  ...(metadata.jwks ? { jwks: metadata.jwks } : {}),
-  ...(metadata.encrypted_response_enc_values_supported
-    ? {
-        encrypted_response_enc_values_supported: [
-          ...metadata.encrypted_response_enc_values_supported,
-        ],
-      }
-    : {}),
-})
+/**
+ * Whether a key is one a Wallet could encrypt an Authorization Response to.
+ *
+ * Section 8.3 has the Wallet choose from `client_metadata.jwks` "based on
+ * information about each key, such as the kty, use, alg", and requires `alg` to
+ * be present. A key marked for signing is therefore not a candidate, and a key
+ * with no `use` counts only when its `alg` names an encryption algorithm.
+ */
+const isResponseEncryptionKey = (key: { use?: string; alg?: string } | undefined): boolean =>
+  key != null &&
+  key.use !== 'sig' &&
+  typeof key.alg === 'string' &&
+  key.alg !== '' &&
+  !isSignatureAlgorithm(key.alg)
+
+/** The JWS algorithms this library signs Request Objects with (RFC 7518). */
+const isSignatureAlgorithm = (alg: string): boolean =>
+  /^(HS|RS|ES|PS)\d{3}$/.test(alg) || alg === 'EdDSA' || alg === 'none'
+
+/**
+ * Projects the stored Verifier configuration onto the `client_metadata` a
+ * request carries.
+ *
+ * `jwks` is included only when the Response Mode actually encrypts the
+ * Authorization Response, and then only with the keys a Wallet could encrypt
+ * to. Section 5.1 describes the set as keys "used by the Wallet as an input to
+ * a key agreement that may be used for encryption of the Authorization
+ * Response", and states that public keys in it "MUST NOT be used to verify the
+ * signature of signed Authorization Requests" — so the key this Verifier signs
+ * Request Objects with has no purpose there, and encryption keys have none in a
+ * Response Mode that never encrypts. Publishing either invites a Wallet to read
+ * a key it cannot classify.
+ */
+export const toClientMetadata = (
+  metadata: VerifierMetadata,
+  options?: { responseMode?: string }
+): ClientMetadata => {
+  const encrypts =
+    options?.responseMode === 'direct_post.jwt' || options?.responseMode === 'dc_api.jwt'
+  const encryptionKeys = (metadata.jwks?.keys ?? []).filter(isResponseEncryptionKey)
+
+  return {
+    vp_formats_supported: metadata.vp_formats_supported,
+    ...(encrypts && encryptionKeys.length > 0 ? { jwks: { keys: encryptionKeys } } : {}),
+    ...(encrypts && metadata.encrypted_response_enc_values_supported
+      ? {
+          encrypted_response_enc_values_supported: [
+            ...metadata.encrypted_response_enc_values_supported,
+          ],
+        }
+      : {}),
+  }
+}
