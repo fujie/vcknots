@@ -1762,6 +1762,30 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 	}
 	options.SetAudience(req.ClientID)
 	options.SetNonce(req.Nonce)
+
+	// An SD-JWT VC presented over OID4VP carries a Key Binding JWT: DCQL
+	// requires Cryptographic Holder Binding unless a Credential Query turns it
+	// off (Section 6.1, where require_cryptographic_holder_binding defaults to
+	// true), and Appendix B.3.6 states what the KB-JWT's nonce and aud must be.
+	// The audience and nonce set above are exactly those values.
+	if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
+		sdOpts.RequireKeyBinding = holderBindingRequired(req)
+	}
+}
+
+// holderBindingRequired reports whether the request asks for Cryptographic
+// Holder Binding. A DCQL query may turn it off per Credential Query; anything
+// else leaves it on, which is the default Section 6.1 states.
+func holderBindingRequired(req *oid4vp.CredentialPresentationRequest) bool {
+	if !req.UsesDCQL() {
+		return true
+	}
+	for _, credential := range req.DCQLQuery.Credentials {
+		if !credential.RequiresHolderBinding() {
+			return false
+		}
+	}
+	return true
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.

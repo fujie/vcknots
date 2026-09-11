@@ -36,10 +36,14 @@ export type DirectPostVpAudTransactionStore = {
   ) =>
     | { ok: true; transactionId: string }
     | { ok: false; error: { error: string; error_description: string } }
-  resolveExpectedAudFromWalletState: (
-    state: string | undefined
-  ) =>
-    | { ok: true; aud: ClientIdentifier; transactionId: string; dcqlQuery?: DcqlQuery }
+  resolveExpectedAudFromWalletState: (state: string | undefined) =>
+    | {
+        ok: true
+        aud: ClientIdentifier
+        transactionId: string
+        dcqlQuery?: DcqlQuery
+        nonce?: string
+      }
     | { ok: false; error: { error: string; error_description: string } }
   consume: (transactionId: string, state: string) => void
   /**
@@ -122,7 +126,13 @@ export function createDirectPostVpAudTransactionStore(options?: {
   const resolveExpectedAudFromWalletState = (
     state: string | undefined
   ):
-    | { ok: true; aud: ClientIdentifier; transactionId: string; dcqlQuery?: DcqlQuery }
+    | {
+        ok: true
+        aud: ClientIdentifier
+        transactionId: string
+        dcqlQuery?: DcqlQuery
+        nonce?: string
+      }
     | { ok: false; error: { error: string; error_description: string } } => {
     if (state == null || state.trim() === '') {
       return {
@@ -175,7 +185,13 @@ export function createDirectPostVpAudTransactionStore(options?: {
         },
       }
     }
-    return { ok: true, aud: rec.clientId, transactionId, dcqlQuery: rec.dcqlQuery }
+    return {
+      ok: true,
+      aud: rec.clientId,
+      transactionId,
+      dcqlQuery: rec.dcqlQuery,
+      nonce: rec.session?.nonce,
+    }
   }
 
   const bindSession = (

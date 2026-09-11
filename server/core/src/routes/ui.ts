@@ -342,6 +342,20 @@ ${config}
         (OpenID4VP §8.3, JOSE HPKE).</span>
     </label>
   </fieldset>
+  <fieldset>
+    <legend>Credential format</legend>
+    <label>
+      <input type="radio" name="format" value="jwt_vc_json" checked>
+      <span><code>jwt_vc_json</code> — a W3C Verifiable Credential. The Credential Query
+        names its expanded types (OpenID4VP Appendix B.1.1).</span>
+    </label>
+    <label>
+      <input type="radio" name="format" value="dc+sd-jwt">
+      <span><code>dc+sd-jwt</code> — an SD-JWT VC, named by <code>vct_values</code>
+        (Appendix B.3.5). Wallets that implement only this format answer
+        <code>vp_formats_not_supported</code> to the other one.</span>
+    </label>
+  </fieldset>
   <div class="row">
     <button id="start">Start presentation</button>
     <span id="startStatus" class="hint"></span>
@@ -373,6 +387,7 @@ ${config}
   let poller = null
 
   const selectedMode = () => document.querySelector('input[name=mode]:checked').value
+  const selectedFormat = () => document.querySelector('input[name=format]:checked').value
 
   const render = (result) => {
     $('status').textContent = result.status
@@ -411,6 +426,7 @@ ${config}
     status.textContent = 'Creating…'
     try {
       const mode = selectedMode()
+      const credentialFormat = selectedFormat()
       const endpoint = mode === 'direct_post.jwt' ? '/request-encrypted' : '/request'
       const res = await fetch(SERVER_URL + endpoint, {
         method: 'POST',
@@ -418,6 +434,7 @@ ${config}
         body: JSON.stringify({
           credentialId: 'UniversityDegreeCredential',
           state: crypto.randomUUID().replaceAll('-', ''),
+          credentialFormat,
         }),
       })
       const body = await res.text()

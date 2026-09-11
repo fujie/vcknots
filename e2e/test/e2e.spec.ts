@@ -121,6 +121,29 @@ describe('issue, present and verify end to end', { timeout: START_TIMEOUT_MS }, 
     })
   })
 
+  describe('the credential format', () => {
+    /**
+     * Support for a Credential Format is a deployment decision on both sides: a
+     * Wallet that does not implement one answers `vp_formats_not_supported`
+     * (§8.5). This server can ask for either format it issues, so a wallet that
+     * speaks only SD-JWT VC can be exercised too.
+     */
+    it('answers a dc+sd-jwt query with a key-bound SD-JWT VC', async () => {
+      const offer = await createCredentialOffer(harness, 'UniversityDegreeCredentialSdJwt')
+      const credential = await receiveCredential(harness, offer)
+      assert.equal(credential.mimeType, 'application/dc+sd-jwt')
+
+      const request = await createAuthorizationRequest(harness, 'direct_post', 'dcql', 'dc+sd-jwt')
+      // Appendix B.3.5: an SD-JWT VC is named by vct_values, not by the
+      // expanded types a W3C Verifiable Credential uses.
+      assert.ok(request.uri.includes('vct_values'), 'the query should name the vct')
+
+      await presentCredential(harness, request.uri)
+      const result = await waitForPresentationResult(harness, request.transactionId)
+      assert.equal(result.status, 'verified', JSON.stringify(result.error))
+    })
+  })
+
   describe('the query language', () => {
     /**
      * OpenID4VP 1.0 replaced Presentation Exchange with DCQL, and with it the

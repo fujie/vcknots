@@ -125,6 +125,9 @@ const requestEndpoint: Record<RequestKind, string> = {
  */
 export type QueryLanguage = 'dcql' | 'presentation-exchange'
 
+/** The Credential Format a request asks for (OpenID4VP Appendix B). */
+export type CredentialFormat = 'jwt_vc_json' | 'dc+sd-jwt'
+
 export type AuthorizationRequest = {
   uri: string
   transactionId: string
@@ -135,7 +138,8 @@ export type AuthorizationRequest = {
 export const createAuthorizationRequest = async (
   harness: Harness,
   kind: RequestKind,
-  queryLanguage: QueryLanguage = 'dcql'
+  queryLanguage: QueryLanguage = 'dcql',
+  credentialFormat: CredentialFormat = 'jwt_vc_json'
 ): Promise<AuthorizationRequest> => {
   const state = crypto.randomUUID().replaceAll('-', '')
   const body =
@@ -146,6 +150,7 @@ export const createAuthorizationRequest = async (
           state,
           client_id: 'x509_san_dns:localhost',
           queryLanguage,
+          credentialFormat,
         }
 
   const response = await postJson(`${harness.serverUrl}${requestEndpoint[kind]}`, body)
