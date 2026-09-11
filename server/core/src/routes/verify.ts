@@ -100,10 +100,72 @@ const readCredentialFormat = (value: unknown): CredentialFormat =>
   value === 'dc+sd-jwt' ? 'dc+sd-jwt' : 'jwt_vc_json'
 
 /**
- * The `vct` of the SD-JWT VC this issuer issues, which a Credential Query for
- * `dc+sd-jwt` names in `meta.vct_values` (Appendix B.3.5).
+ * The Credential type a request asks for when the caller names none: the ones
+ * this sample issuer issues. A Wallet holding someone else's credential will
+ * not find a match for these, so the caller can name its own.
+ *
+ * For `jwt_vc_json` the values are fully expanded types (Appendix B.1.1); the
+ * sample credential declares only the standard context, which expands
+ * VerifiableCredential and leaves UniversityDegreeCredential as it is. For
+ * `dc+sd-jwt` they are `vct` values as the issuer writes them (Appendix B.3.5).
  */
-const SD_JWT_VCT = 'UniversityDegreeCredential'
+const DEFAULT_CREDENTIAL_TYPES: Record<CredentialFormat, string[]> = {
+  jwt_vc_json: [
+    'https://www.w3.org/2018/credentials#VerifiableCredential',
+    'UniversityDegreeCredential',
+  ],
+  'dc+sd-jwt': ['UniversityDegreeCredential'],
+}
+
+/** Bounds on a caller-supplied type list, so a request stays a sensible size. */
+const MAX_CREDENTIAL_TYPES = 10
+const MAX_CREDENTIAL_TYPE_LENGTH = 2048
+
+type CredentialTypesResult =
+  | { ok: true; types: string[] }
+  | { ok: false; error: { error: string; error_description: string } }
+
+/**
+ * Reads the Credential type a caller wants presented.
+ *
+ * It lands in `meta.vct_values` for `dc+sd-jwt` — any one of the values may
+ * match — and as the single inner array of `meta.type_values` for
+ * `jwt_vc_json`, where every value must be present. Values are used as given:
+ * `type_values` must already hold fully expanded types, and guessing an
+ * expansion here would ask for something other than what the caller wrote.
+ */
+const readCredentialTypes = (value: unknown, format: CredentialFormat): CredentialTypesResult => {
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, types: [...DEFAULT_CREDENTIAL_TYPES[format]] }
+  }
+
+  const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : undefined
+  const invalid = (description: string): CredentialTypesResult => ({
+    ok: false,
+    error: { error: 'invalid_request', error_description: description },
+  })
+  if (!raw) {
+    return invalid('credentialType must be a string or an array of strings.')
+  }
+
+  const types = raw.map((entry) => (typeof entry === 'string' ? entry.trim() : entry))
+  if (types.some((entry) => typeof entry !== 'string')) {
+    return invalid('credentialType must contain only strings.')
+  }
+  const named = (types as string[]).filter((entry) => entry !== '')
+  if (named.length === 0) {
+    return invalid('credentialType must name at least one type.')
+  }
+  if (named.length > MAX_CREDENTIAL_TYPES) {
+    return invalid(`credentialType may name at most ${MAX_CREDENTIAL_TYPES} types.`)
+  }
+  if (named.some((entry) => entry.length > MAX_CREDENTIAL_TYPE_LENGTH)) {
+    return invalid(
+      `each credentialType value may be at most ${MAX_CREDENTIAL_TYPE_LENGTH} characters.`
+    )
+  }
+  return { ok: true, types: [...new Set(named)] }
+}
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
@@ -155,49 +217,27 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
    * Credential Query id, so it is also the key of the `vp_token` object the
    * Wallet returns (§8.1).
    */
-  const buildTestDcqlQuery = (credentialId: string, format: CredentialFormat = 'jwt_vc_json') =>
-    format === 'dc+sd-jwt'
-      ? Dcql({
-          dcql_query: {
-            credentials: [
-              {
-                id: credentialId,
-                format: 'dc+sd-jwt',
-                // Appendix B.3.5: vct_values names the SD-JWT VC type. Unlike
-                // the W3C VC case there is no @context, so the value is the vct
-                // as the issuer writes it.
-                meta: { vct_values: [SD_JWT_VCT] },
-              },
-            ],
+  const buildTestDcqlQuery = (credentialId: string, format: CredentialFormat, types: string[]) =>
+    Dcql({
+      dcql_query: {
+        credentials: [
+          {
+            // `id` only names this Credential Query — it is the key the
+            // vp_token comes back under (§6.1), and constrains nothing. What
+            // the Verifier actually asks for is in `meta`.
+            id: credentialId,
+            format,
+            meta:
+              format === 'dc+sd-jwt'
+                ? // Appendix B.3.5: any one of the vct values may match.
+                  { vct_values: types }
+                : // Appendix B.1.1: one set of fully expanded types, all of
+                  // which the credential must carry.
+                  { type_values: [types] },
           },
-        })
-      : Dcql({
-          dcql_query: {
-            credentials: [
-              {
-                // `id` only names this Credential Query — it is the key the
-                // vp_token comes back under (§6.1), and constrains nothing. What
-                // the Verifier actually asks for is in `meta`.
-                id: credentialId,
-                format: 'jwt_vc_json',
-                meta: {
-                  // Appendix B.1.1: type_values holds fully expanded types (IRIs),
-                  // obtained by applying the credential's @context. The sample
-                  // credential declares only https://www.w3.org/2018/credentials/v1,
-                  // which defines VerifiableCredential and expands it; it does not
-                  // define UniversityDegreeCredential, so that term stays as it is
-                  // and is already its own fully expanded type.
-                  type_values: [
-                    [
-                      'https://www.w3.org/2018/credentials#VerifiableCredential',
-                      'UniversityDegreeCredential',
-                    ],
-                  ],
-                },
-              },
-            ],
-          },
-        })
+        ],
+      },
+    })
 
   /**
    * The query a request carries. DCQL is what 1.0 defines; Presentation Exchange
@@ -206,11 +246,16 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   const buildQuery = (
     credentialId: string,
     queryLanguage: QueryLanguage,
-    format: CredentialFormat
-  ) =>
-    queryLanguage === 'dcql'
-      ? buildTestDcqlQuery(credentialId, format)
-      : buildTestQuery(credentialId)
+    format: CredentialFormat,
+    types: string[]
+  ) => {
+    // The query is built once and the same object is recorded against the
+    // transaction, so the callback checks the response against exactly what
+    // was sent. Presentation Exchange keeps its fixed definition.
+    const dcql =
+      queryLanguage === 'dcql' ? buildTestDcqlQuery(credentialId, format, types) : undefined
+    return { query: dcql ?? buildTestQuery(credentialId), dcqlQuery: dcql?.dcql_query }
+  }
 
   /** The presentation definition both request endpoints ask for. */
   const buildTestQuery = (credentialId: string) =>
@@ -330,7 +375,16 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       const queryLanguage = readQueryLanguage(body.queryLanguage)
       const credentialFormat = readCredentialFormat(body.credentialFormat)
-      const query = buildQuery(credentialId, queryLanguage, credentialFormat)
+      const credentialTypes = readCredentialTypes(body.credentialType, credentialFormat)
+      if (!credentialTypes.ok) {
+        return c.json(credentialTypes.error, 400)
+      }
+      const { query, dcqlQuery } = buildQuery(
+        credentialId,
+        queryLanguage,
+        credentialFormat,
+        credentialTypes.types
+      )
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
@@ -347,11 +401,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       if (!registered.ok) {
         return c.json(registered.error, 400)
       }
-      if (queryLanguage === 'dcql') {
-        vpAudTx.bindDcqlQuery(
-          registered.transactionId,
-          buildTestDcqlQuery(credentialId, credentialFormat).dcql_query
-        )
+      if (dcqlQuery) {
+        vpAudTx.bindDcqlQuery(registered.transactionId, dcqlQuery)
       }
       // The Key Binding JWT of an SD-JWT VC presentation has to carry the nonce
       // from this request (Appendix B.3.6), so the callback needs it back. A
@@ -440,12 +491,23 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       const queryLanguage = readQueryLanguage(body.queryLanguage)
       const credentialFormat = readCredentialFormat(body.credentialFormat)
+      const credentialTypes = readCredentialTypes(body.credentialType, credentialFormat)
+      if (!credentialTypes.ok) {
+        vpAudTx.deleteById(registered.transactionId)
+        return c.json(credentialTypes.error, 400)
+      }
+      const { query, dcqlQuery } = buildQuery(
+        credentialId,
+        queryLanguage,
+        credentialFormat,
+        credentialTypes.types
+      )
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
         client_id,
         'direct_post.jwt',
-        buildQuery(credentialId, queryLanguage, credentialFormat),
+        query,
         false,
         { response_uri: responseUri, base_url: baseUrl }
       )
@@ -462,11 +524,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       // The nonce is minted by createAuthzRequest, so the session can only be
       // recorded now.
       vpAudTx.bindSession(registered.transactionId, { nonce: request.nonce, responseUri })
-      if (queryLanguage === 'dcql') {
-        vpAudTx.bindDcqlQuery(
-          registered.transactionId,
-          buildTestDcqlQuery(credentialId, credentialFormat).dcql_query
-        )
+      if (dcqlQuery) {
+        vpAudTx.bindDcqlQuery(registered.transactionId, dcqlQuery)
       }
       console.log('[verify] direct_post.jwt transaction_id:', registered.transactionId)
       presentationResults.start({

@@ -356,6 +356,11 @@ ${config}
         <code>vp_formats_not_supported</code> to the other one.</span>
     </label>
   </fieldset>
+  <fieldset>
+    <legend>Credential type</legend>
+    <textarea id="credentialType" rows="3" spellcheck="false"></textarea>
+    <p id="credentialTypeHint" class="hint"></p>
+  </fieldset>
   <div class="row">
     <button id="start">Start presentation</button>
     <span id="startStatus" class="hint"></span>
@@ -388,6 +393,48 @@ ${config}
 
   const selectedMode = () => document.querySelector('input[name=mode]:checked').value
   const selectedFormat = () => document.querySelector('input[name=format]:checked').value
+
+  // What the Credential Query asks for, one value per line. The defaults name
+  // the credentials this sample issuer issues; a wallet holding another
+  // issuer's credential needs that credential's own type here.
+  const DEFAULT_TYPES = {
+    jwt_vc_json: [
+      'https://www.w3.org/2018/credentials#VerifiableCredential',
+      'UniversityDegreeCredential',
+    ],
+    'dc+sd-jwt': ['UniversityDegreeCredential'],
+  }
+  const TYPE_HINTS = {
+    jwt_vc_json:
+      'Fully expanded types, all of which the credential must carry (meta.type_values, Appendix B.1.1). ' +
+      'A term its @context defines must be written as the IRI it expands to.',
+    'dc+sd-jwt':
+      'vct values, any one of which may match (meta.vct_values, Appendix B.3.5) — ' +
+      'for example the vct of the credential the wallet holds.',
+  }
+  const defaultTypesText = (format) => DEFAULT_TYPES[format].join('\\n')
+  let typesFormat = selectedFormat()
+  $('credentialType').value = defaultTypesText(typesFormat)
+  $('credentialTypeHint').textContent = TYPE_HINTS[typesFormat]
+
+  for (const radio of document.querySelectorAll('input[name=format]')) {
+    radio.addEventListener('change', () => {
+      const format = selectedFormat()
+      const current = $('credentialType').value.trim()
+      // Swap in the new format's default unless the value was edited by hand.
+      if (current === '' || current === defaultTypesText(typesFormat)) {
+        $('credentialType').value = defaultTypesText(format)
+      }
+      $('credentialTypeHint').textContent = TYPE_HINTS[format]
+      typesFormat = format
+    })
+  }
+
+  const selectedTypes = () =>
+    $('credentialType')
+      .value.split('\\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '')
 
   const render = (result) => {
     $('status').textContent = result.status
@@ -435,6 +482,7 @@ ${config}
           credentialId: 'UniversityDegreeCredential',
           state: crypto.randomUUID().replaceAll('-', ''),
           credentialFormat,
+          credentialType: selectedTypes(),
         }),
       })
       const body = await res.text()

@@ -139,7 +139,8 @@ export const createAuthorizationRequest = async (
   harness: Harness,
   kind: RequestKind,
   queryLanguage: QueryLanguage = 'dcql',
-  credentialFormat: CredentialFormat = 'jwt_vc_json'
+  credentialFormat: CredentialFormat = 'jwt_vc_json',
+  credentialType?: string[]
 ): Promise<AuthorizationRequest> => {
   const state = crypto.randomUUID().replaceAll('-', '')
   const body =
@@ -151,6 +152,7 @@ export const createAuthorizationRequest = async (
           client_id: 'x509_san_dns:localhost',
           queryLanguage,
           credentialFormat,
+          ...(credentialType ? { credentialType } : {}),
         }
 
   const response = await postJson(`${harness.serverUrl}${requestEndpoint[kind]}`, body)

@@ -142,6 +142,34 @@ describe('issue, present and verify end to end', { timeout: START_TIMEOUT_MS }, 
       const result = await waitForPresentationResult(harness, request.transactionId)
       assert.equal(result.status, 'verified', JSON.stringify(result.error))
     })
+
+    it('asks for the credential type the verifier names', async () => {
+      const offer = await createCredentialOffer(harness, 'UniversityDegreeCredentialSdJwt')
+      await receiveCredential(harness, offer)
+
+      // A type the wallet holds nothing for: the Credential Query id stays the
+      // same, and only meta.vct_values decides whether anything matches.
+      const elsewhere = await createAuthorizationRequest(
+        harness,
+        'direct_post',
+        'dcql',
+        'dc+sd-jwt',
+        ['https://issuer.example.com/vct/some-other-credential']
+      )
+      assert.ok(
+        decodeURIComponent(elsewhere.uri).includes('some-other-credential'),
+        'the request should carry the named vct'
+      )
+      await assert.rejects(presentCredential(harness, elsewhere.uri), /no held credential answers/)
+
+      // The type the wallet does hold.
+      const held = await createAuthorizationRequest(harness, 'direct_post', 'dcql', 'dc+sd-jwt', [
+        'UniversityDegreeCredential',
+      ])
+      await presentCredential(harness, held.uri)
+      const result = await waitForPresentationResult(harness, held.transactionId)
+      assert.equal(result.status, 'verified', JSON.stringify(result.error))
+    })
   })
 
   describe('the query language', () => {
