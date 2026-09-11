@@ -163,10 +163,20 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         }
         const kbSdJwtDecoded = KbJwtJsonPayload(await jose.decodeJwt(kbJwt))
         nonce = kbSdJwtDecoded.nonce
-        const { expectedAud } = options
+        const { expectedAud, expectedNonce } = options
         if (kbSdJwtDecoded.aud !== expectedAud) {
           throw err('invalid_sd_jwt', {
             message: 'Key binding JWT aud does not match expected client_id.',
+          })
+        }
+        // Appendix B.3.6: "the nonce claim MUST be the value of nonce from the
+        // Authorization Request". The nonce store below establishes that the
+        // nonce is one this Verifier issued and has not been used, but not that
+        // it belongs to this request, so a caller that knows which nonce it
+        // asked with says so and the two are compared.
+        if (expectedNonce !== undefined && kbSdJwtDecoded.nonce !== expectedNonce) {
+          throw err('invalid_sd_jwt', {
+            message: 'Key binding JWT nonce does not match the nonce of the authorization request.',
           })
         }
       }

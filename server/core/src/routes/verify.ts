@@ -275,6 +275,15 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       (credential) => credential.format === 'dc+sd-jwt'
     )
 
+    if (asksForSdJwtVc && !options.nonce) {
+      // Without the nonce this request was issued with there is nothing to hold
+      // the Key Binding JWT to, so the response is refused rather than accepted
+      // on the strength of the nonce store alone.
+      throw err('internal_server_error', {
+        message: 'The nonce of the authorization request was not recorded.',
+      })
+    }
+
     return await verifierFlow.verifyDcqlPresentations(
       verifierId,
       authorizationResponse,
@@ -345,13 +354,22 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         )
       }
       // The Key Binding JWT of an SD-JWT VC presentation has to carry the nonce
-      // from this request (Appendix B.3.6), so the callback needs it back.
-      if (request.nonce) {
-        vpAudTx.bindSession(registered.transactionId, {
-          nonce: request.nonce,
-          responseUri: `${baseUrl}/callback`,
-        })
+      // from this request (Appendix B.3.6), so the callback needs it back. A
+      // request without one cannot be checked against later and is refused here
+      // rather than verified loosely.
+      if (!request.nonce) {
+        return c.json(
+          {
+            error: 'internal_server_error',
+            error_description: 'The authorization request carries no nonce.',
+          },
+          500
+        )
       }
+      vpAudTx.bindSession(registered.transactionId, {
+        nonce: request.nonce,
+        responseUri: `${baseUrl}/callback`,
+      })
       console.log('[verify] direct_post transaction_id:', registered.transactionId)
       presentationResults.start({
         transactionId: registered.transactionId,
