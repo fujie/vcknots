@@ -489,12 +489,14 @@ describe('Vcknots', () => {
         authzRequest.client_metadata?.vp_formats_supported,
         metadata.vp_formats_supported
       )
-      assert.ok(authzRequest.client_metadata.jwks)
-      assert.ok(authzRequest.client_metadata.jwks.keys)
-      // Section 5.1 requires a kid on every key in the set.
-      for (const key of authzRequest.client_metadata.jwks.keys) {
-        assert.ok(key?.kid, 'every JWK in client_metadata.jwks needs a kid')
-      }
+      // Section 5.1 describes client_metadata.jwks as keys a Wallet encrypts the
+      // Authorization Response to, and forbids using them to verify a signed
+      // request. direct_post never encrypts, so there is no key to publish.
+      assert.equal(
+        authzRequest.client_metadata.jwks,
+        undefined,
+        'direct_post encrypts nothing, so client_metadata carries no jwks'
+      )
       assert.ok(authzRequest.nonce)
       assert.ok('presentation_definition' in authzRequest && authzRequest.presentation_definition)
       assert.deepEqual(authzRequest.presentation_definition, presentationDefinition)
@@ -526,12 +528,14 @@ describe('Vcknots', () => {
         authzRequest.client_metadata?.vp_formats_supported,
         metadata.vp_formats_supported
       )
-      assert.ok(authzRequest.client_metadata.jwks)
-      assert.ok(authzRequest.client_metadata.jwks.keys)
-      // Section 5.1 requires a kid on every key in the set.
-      for (const key of authzRequest.client_metadata.jwks.keys) {
-        assert.ok(key?.kid, 'every JWK in client_metadata.jwks needs a kid')
-      }
+      // Section 5.1 describes client_metadata.jwks as keys a Wallet encrypts the
+      // Authorization Response to, and forbids using them to verify a signed
+      // request. direct_post never encrypts, so there is no key to publish.
+      assert.equal(
+        authzRequest.client_metadata.jwks,
+        undefined,
+        'direct_post encrypts nothing, so client_metadata carries no jwks'
+      )
       assert.ok(authzRequest.nonce)
       assert.ok('dcql_query' in authzRequest && authzRequest.dcql_query)
       assert.deepEqual(authzRequest.dcql_query, dcqlQuery)

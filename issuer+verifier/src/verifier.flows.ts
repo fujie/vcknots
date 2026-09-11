@@ -542,7 +542,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           response_uri: responseUri,
           iss: client_id,
           aud: 'https://self-issued.me/v2',
-          client_metadata: toClientMetadata(metadata),
+          client_metadata: toClientMetadata(metadata, {
+            responseMode: response_mode || 'direct_post',
+          }),
           response_mode: response_mode || 'direct_post',
           ...parsedQuery,
           ...(transaction_data.length > 0 ? { transaction_data } : {}),
@@ -564,7 +566,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         response_uri: responseUri,
         response_type: response_type,
         response_mode: response_mode || 'direct_post',
-        client_metadata: toClientMetadata(metadata),
+        client_metadata: toClientMetadata(metadata, {
+          responseMode: response_mode || 'direct_post',
+        }),
         nonce: nonce.nonce,
         ...parsedQuery,
         ...(transaction_data.length > 0 ? { transaction_data } : {}),
